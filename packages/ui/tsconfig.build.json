@@ -1,0 +1,17 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"outDir": "./dist",
+		"rootDir": "./src",
+		"jsx": "react-jsx",
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"paths": {
+			"@coudycode/ai": ["../ai/dist/index.d.ts"],
+			"@coudycode/ai/*": ["../ai/dist/*.d.ts", "../ai/dist/providers/*.d.ts"],
+			"@coudycode/agent-core": ["../agent/dist/index.d.ts"],
+			"@coudycode/agent-core/*": ["../agent/dist/*.d.ts"]
+		}
+	},
+	"include": ["src/**/*.ts", "src/**/*.tsx"],
+	"exclude": ["node_modules", "dist", "**/*.d.ts", "src/**/*.d.ts"]
+}

@@ -9,7 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@coudycode/ai": "*",
+    "@coudycode/agent-core": "*",
     "@coudycode/core": "*",
+    "@coudycode/ui": "*",
     "bootstrap": "^5.3.3",
     "lucide-react": "^0.439.0",
     "react": "^18.3.1",

@@ -5,6 +5,7 @@ import Dashboard from "./Dashboard";
 import PluginManager from "./PluginManager";
 import ChatView from "./ChatView";
 import Settings from "./Settings";
+import Playground from "./playground/Playground";
 import { useCoudyUI } from "./useCoudyUI";
 import { useSessions } from "./sessions";
 import type { ChatSession } from "./sessions";
@@ -88,6 +89,7 @@ export default function App(): React.ReactNode {
           <Route path="/dashboard" element={<Dashboard widgets={ui.dashboardWidgets} />} />
           <Route path="/plugins" element={<PluginManager />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/playground" element={<Playground />} />
           <Route
             path="/chat/:sessionId"
             element={

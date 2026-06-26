@@ -1,0 +1,219 @@
+/* @coudycode/ui — стилі компонентів (неймспейс .cc-ui, щоб не конфліктувати з Bootstrap) */
+
+.cc-ui-conversation {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+	width: 100%;
+}
+
+/*повідомлення користувача/асистента*/
+.cc-ui-msg {
+	border-radius: 0.5rem;
+	padding: 0.75rem 1rem;
+	max-width: 100%;
+}
+.cc-ui-msg-user {
+	background: #eef2ff;
+	align-self: flex-end;
+	max-width: 80%;
+}
+.cc-ui-msg-assistant {
+	background: #f8f9fa;
+	border: 1px solid #e9ecef;
+	align-self: stretch;
+}
+.cc-ui-msg-role {
+	font-size: 0.75rem;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	color: #6c757d;
+	margin-bottom: 0.35rem;
+	font-weight: 600;
+}
+.cc-ui-msg-body {
+	font-size: 0.9rem;
+	line-height: 1.55;
+	word-break: break-word;
+}
+.cc-ui-msg-body p:last-child {
+	margin-bottom: 0;
+}
+.cc-ui-msg-body pre {
+	background: #1e1e2e;
+	color: #e9ecef;
+	border-radius: 0.4rem;
+	padding: 0.75rem;
+	overflow-x: auto;
+	margin: 0.5rem 0;
+	font-size: 0.82rem;
+}
+.cc-ui-msg-body code {
+	font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+.cc-ui-msg-body :not(pre) > code {
+	background: rgba(0, 0, 0, 0.06);
+	padding: 0.1em 0.3em;
+	border-radius: 0.25rem;
+	font-size: 0.85em;
+}
+.cc-ui-streaming-cursor {
+	display: inline-block;
+	width: 0.5rem;
+	height: 1rem;
+	background: #6366f1;
+	margin-left: 2px;
+	vertical-align: text-bottom;
+	animation: cc-ui-blink 1s steps(2) infinite;
+	border-radius: 1px;
+}
+@keyframes cc-ui-blink {
+	50% {
+		opacity: 0;
+	}
+}
+
+/*tool call / result — загортається*/
+.cc-ui-tool {
+	border: 1px solid #e9ecef;
+	border-radius: 0.5rem;
+	overflow: hidden;
+	margin: 0.25rem 0;
+}
+.cc-ui-tool-head {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.45rem 0.75rem;
+	background: #f1f3f5;
+	cursor: pointer;
+	user-select: none;
+	font-size: 0.82rem;
+}
+.cc-ui-tool-head:hover {
+	background: #e9ecef;
+}
+.cc-ui-tool-name {
+	font-weight: 600;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.cc-ui-tool-status {
+	margin-left: auto;
+	font-size: 0.72rem;
+	padding: 0.1rem 0.5rem;
+	border-radius: 1rem;
+	font-weight: 600;
+}
+.cc-ui-tool-status-running {
+	background: #fff3cd;
+	color: #997404;
+}
+.cc-ui-tool-status-done {
+	background: #d1e7dd;
+	color: #0f5132;
+}
+.cc-ui-tool-status-error {
+	background: #f8d7da;
+	color: #842029;
+}
+.cc-ui-tool-body {
+	padding: 0.6rem 0.75rem;
+	font-size: 0.82rem;
+	background: #fff;
+	border-top: 1px solid #e9ecef;
+}
+.cc-ui-tool-body pre {
+	margin: 0;
+	white-space: pre-wrap;
+	word-break: break-word;
+	font-size: 0.8rem;
+	max-height: 24rem;
+	overflow: auto;
+}
+.cc-ui-tool-args-label,
+.cc-ui-tool-result-label {
+	font-size: 0.7rem;
+	text-transform: uppercase;
+	color: #6c757d;
+	font-weight: 600;
+	margin-bottom: 0.25rem;
+}
+
+/*thinking block*/
+.cc-ui-thinking {
+	border-left: 3px solid #a78bfa;
+	padding-left: 0.75rem;
+	margin: 0.25rem 0;
+}
+.cc-ui-thinking-head {
+	display: flex;
+	align-items: center;
+	gap: 0.4rem;
+	cursor: pointer;
+	font-size: 0.78rem;
+	color: #6d28d9;
+	font-weight: 600;
+	user-select: none;
+}
+.cc-ui-thinking-body {
+	font-size: 0.8rem;
+	color: #555;
+	font-style: italic;
+	margin-top: 0.4rem;
+	white-space: pre-wrap;
+}
+
+/*diff*/
+.cc-ui-diff {
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.8rem;
+	background: #fff;
+	border-radius: 0.4rem;
+	overflow: hidden;
+}
+.cc-ui-diff-line {
+	display: flex;
+	padding: 0;
+	line-height: 1.5;
+}
+.cc-ui-diff-add {
+	background: #e6ffed;
+}
+.cc-ui-diff-del {
+	background: #ffeef0;
+}
+.cc-ui-diff-gutter {
+	width: 1.75rem;
+	flex-shrink: 0;
+	text-align: center;
+	color: #999;
+	background: #f8f9fa;
+	user-select: none;
+}
+.cc-ui-diff-content {
+	padding-left: 0.5rem;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+/*working indicator*/
+.cc-ui-working {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	color: #6c757d;
+	font-size: 0.8rem;
+}
+.cc-ui-spinner {
+	width: 1rem;
+	height: 1rem;
+	border: 2px solid #d1d5db;
+	border-top-color: #6366f1;
+	border-radius: 50%;
+	animation: cc-ui-spin 0.7s linear infinite;
+}
+@keyframes cc-ui-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
