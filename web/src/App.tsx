@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
-import Sidebar, { type View } from "./Sidebar";
+import { Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import Sidebar from "./Sidebar";
 import Dashboard from "./Dashboard";
 import PluginManager from "./PluginManager";
 import ChatView from "./ChatView";
 import Settings from "./Settings";
 import { useCoudyUI } from "./useCoudyUI";
 import { useSessions } from "./sessions";
-import type { DashboardWidget, Route, SidebarItem } from "./types";
+import type { ChatSession } from "./sessions";
+import type { DashboardWidget, Route as PluginRoute, SidebarItem } from "./types";
 
 const COLLAPSE_KEY = "coudycode:sidebar-collapsed";
 
@@ -31,11 +33,11 @@ const defaultDashboardWidgets: DashboardWidget[] = [
     ),
   },
 ];
-const defaultRoutes: Route[] = [];
+const defaultRoutes: PluginRoute[] = [];
 
 export default function App(): React.ReactNode {
   const [collapsed, setCollapsed] = useState<boolean>(() => loadCollapsed());
-  const [view, setView] = useState<View>({ kind: "view", id: "dashboard" });
+  const navigate = useNavigate();
 
   const sessions = useSessions();
   const ui = useCoudyUI({
@@ -54,37 +56,13 @@ export default function App(): React.ReactNode {
 
   const handleSelectSession = (id: string): void => {
     sessions.selectSession(id);
-    setView({ kind: "chat" });
+    navigate(`/chat/${id}`);
   };
 
   const handleCreateSession = (): void => {
-    sessions.createSession();
-    setView({ kind: "chat" });
+    const id = sessions.createSession();
+    navigate(`/chat/${id}`);
   };
-
-  const activeRoute =
-    view.kind === "route" ? ui.routes.find((r) => r.id === view.id) : undefined;
-
-  let mainContent: React.ReactNode;
-  if (view.kind === "chat") {
-    mainContent = (
-      <ChatView session={sessions.activeSession} onSend={sessions.sendMessage} />
-    );
-  } else if (view.kind === "view") {
-    if (view.id === "dashboard") {
-      mainContent = <Dashboard widgets={ui.dashboardWidgets} />;
-    } else if (view.id === "plugins") {
-      mainContent = <PluginManager />;
-    } else {
-      mainContent = <Settings />;
-    }
-  } else if (activeRoute) {
-    mainContent = activeRoute.render();
-  } else {
-    mainContent = (
-      <div className="p-4 text-muted">Сторінку не знайдено.</div>
-    );
-  }
 
   return (
     <div className="d-flex vh-100 overflow-hidden bg-light">
@@ -92,13 +70,10 @@ export default function App(): React.ReactNode {
         collapsed={collapsed}
         onToggleCollapsed={() => setCollapsed((c) => !c)}
         sessions={sessions.sessions}
-        activeSessionId={sessions.activeId}
         sidebarItems={ui.sidebarItems}
-        view={view}
         onSelectSession={handleSelectSession}
         onCreateSession={handleCreateSession}
         onDeleteSession={sessions.deleteSession}
-        onSelectView={setView}
       />
 
       <main className="flex-grow-1 d-flex flex-column overflow-hidden bg-white">
@@ -108,8 +83,68 @@ export default function App(): React.ReactNode {
             {ui.errors.join("; ")}
           </div>
         )}
-        {mainContent}
+        <Routes>
+          <Route path="/" element={<Dashboard widgets={ui.dashboardWidgets} />} />
+          <Route path="/dashboard" element={<Dashboard widgets={ui.dashboardWidgets} />} />
+          <Route path="/plugins" element={<PluginManager />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route
+            path="/chat/:sessionId"
+            element={
+              <ChatRoute
+                sessions={sessions.sessions}
+                activeSession={sessions.activeSession}
+                selectSession={sessions.selectSession}
+                sendMessage={sessions.sendMessage}
+              />
+            }
+          />
+          <Route
+            path="/plugin/:routeId"
+            element={<PluginRouteView routes={ui.routes} />}
+          />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
       </main>
     </div>
   );
+}
+
+interface ChatRouteProps {
+  sessions: ChatSession[];
+  activeSession: ChatSession | null;
+  selectSession: (id: string) => void;
+  sendMessage: (content: string) => void;
+}
+
+/** Маршрут чату: сесія за /chat/:sessionId з URL. */
+function ChatRoute({
+  sessions,
+  activeSession,
+  selectSession,
+  sendMessage,
+}: ChatRouteProps): React.ReactNode {
+  const { sessionId } = useParams();
+  const session =
+    sessions.find((s) => s.id === sessionId) ?? null;
+
+  // Синхронізуємо активну сесію з URL (для sendMessage та стану сайдбару).
+  useEffect(() => {
+    if (sessionId && sessionId !== activeSession?.id) {
+      selectSession(sessionId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  return <ChatView session={session} onSend={sendMessage} />;
+}
+
+/** Маршрут сторінки плагіна: route з ui:routes за /plugin/:routeId. */
+function PluginRouteView({ routes }: { routes: PluginRoute[] }): React.ReactNode {
+  const { routeId } = useParams();
+  const route = routes.find((r) => r.id === routeId);
+  if (!route) {
+    return <div className="p-4 text-muted">Сторінку не знайдено.</div>;
+  }
+  return route.render();
 }

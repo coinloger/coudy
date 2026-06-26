@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   Box,
   Boxes,
@@ -21,24 +22,14 @@ import {
 import type { SidebarItem } from "./types";
 import type { ChatSession } from "./sessions";
 
-export type ViewId = "dashboard" | "plugins" | "settings";
-
-export type View =
-  | { kind: "chat" }
-  | { kind: "view"; id: ViewId }
-  | { kind: "route"; id: string };
-
 interface SidebarProps {
   collapsed: boolean;
   onToggleCollapsed: () => void;
   sessions: ChatSession[];
-  activeSessionId: string | null;
   sidebarItems: SidebarItem[];
-  view: View;
   onSelectSession: (id: string) => void;
   onCreateSession: () => void;
   onDeleteSession: (id: string) => void;
-  onSelectView: (view: View) => void;
 }
 
 /** Curated-карта іконок Lucide за іменем (для пунктів від плагінів). */
@@ -59,20 +50,25 @@ function resolveIcon(name?: string): LucideIcon {
   return LayoutGrid;
 }
 
-/** Вбудовані пункти футера (Дашборд/Плагіни/Налаштування). */
-const BUILTIN_FOOTER: { id: string; label: string; icon: LucideIcon; view: View }[] = [
-  { id: "dashboard", label: "Дашборд", icon: LayoutDashboard, view: { kind: "view", id: "dashboard" } },
-  { id: "plugins", label: "Плагіни", icon: Puzzle, view: { kind: "view", id: "plugins" } },
-  { id: "settings", label: "Налаштування", icon: SettingsIcon, view: { kind: "view", id: "settings" } },
+/** Вбудовані пункти футера (Дашборд/Плагіни/Налаштування) — шляхи маршрутизації. */
+const BUILTIN_FOOTER: {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  path: string;
+  /** чи вважати цей пункт активним за шляхом */
+  match: (pathname: string) => boolean;
+}[] = [
+  {
+    id: "dashboard",
+    label: "Дашборд",
+    icon: LayoutDashboard,
+    path: "/dashboard",
+    match: (p) => p === "/" || p === "/dashboard",
+  },
+  { id: "plugins", label: "Плагіни", icon: Puzzle, path: "/plugins", match: (p) => p === "/plugins" },
+  { id: "settings", label: "Налаштування", icon: SettingsIcon, path: "/settings", match: (p) => p === "/settings" },
 ];
-
-function isViewEqual(a: View, b: View): boolean {
-  if (a.kind !== b.kind) return false;
-  if (a.kind === "chat" && b.kind === "chat") return true;
-  if (a.kind === "view" && b.kind === "view") return a.id === b.id;
-  if (a.kind === "route" && b.kind === "route") return a.id === b.id;
-  return false;
-}
 
 function ItemButton(props: {
   active: boolean;
@@ -106,15 +102,14 @@ export default function Sidebar(props: SidebarProps): React.ReactNode {
     collapsed,
     onToggleCollapsed,
     sessions,
-    activeSessionId,
     sidebarItems,
-    view,
     onSelectSession,
     onCreateSession,
     onDeleteSession,
-    onSelectView,
   } = props;
 
+  const navigate = useNavigate();
+  const location = useLocation();
   const [query, setQuery] = useState("");
 
   const filteredSessions = query.trim()
@@ -122,6 +117,10 @@ export default function Sidebar(props: SidebarProps): React.ReactNode {
     : sessions;
 
   const width = collapsed ? 60 : 280;
+
+  const isSessionActive = (id: string): boolean => location.pathname === `/chat/${id}`;
+  const isPluginActive = (routeId?: string): boolean =>
+    !!routeId && location.pathname === `/plugin/${routeId}`;
 
   return (
     <aside
@@ -143,7 +142,7 @@ export default function Sidebar(props: SidebarProps): React.ReactNode {
             type="button"
             className="btn btn-link text-light text-decoration-none d-flex align-items-center gap-1 p-0 flex-grow-1"
             title="На дашборд"
-            onClick={() => onSelectView({ kind: "view", id: "dashboard" })}
+            onClick={() => navigate("/dashboard")}
           >
             <Zap size={18} className="text-warning" />
             <span className="fw-semibold">coudycode</span>
@@ -199,34 +198,31 @@ export default function Sidebar(props: SidebarProps): React.ReactNode {
           <div className="text-uppercase text-secondary small px-2 py-1">Нещодавні</div>
         )}
         <ul className="nav flex-column gap-1 mb-2">
-          {filteredSessions.map((s) => {
-            const active = activeSessionId === s.id && view.kind === "chat";
-            return (
-              <li className="nav-item" key={s.id}>
-                <ItemButton
-                  active={active}
-                  collapsed={collapsed}
-                  title={s.title}
-                  icon={<MessageSquare size={16} />}
-                  label={s.title}
-                  onClick={() => onSelectSession(s.id)}
-                  trailing={
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-link text-secondary p-0 flex-shrink-0"
-                      title="Видалити"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteSession(s.id);
-                      }}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  }
-                />
-              </li>
-            );
-          })}
+          {filteredSessions.map((s) => (
+            <li className="nav-item" key={s.id}>
+              <ItemButton
+                active={isSessionActive(s.id)}
+                collapsed={collapsed}
+                title={s.title}
+                icon={<MessageSquare size={16} />}
+                label={s.title}
+                onClick={() => onSelectSession(s.id)}
+                trailing={
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-link text-secondary p-0 flex-shrink-0"
+                    title="Видалити"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteSession(s.id);
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                }
+              />
+            </li>
+          ))}
           {!collapsed && filteredSessions.length === 0 && (
             <li className="px-2 text-secondary small">Немає сесій</li>
           )}
@@ -239,18 +235,16 @@ export default function Sidebar(props: SidebarProps): React.ReactNode {
           <ul className="nav flex-column gap-1 mb-2">
             {sidebarItems.map((item) => {
               const ItemIcon = resolveIcon(item.icon);
-              const active = view.kind === "route" && view.id === item.routeId;
               return (
                 <li className="nav-item" key={item.id}>
                   <ItemButton
-                    active={!!active}
+                    active={isPluginActive(item.routeId)}
                     collapsed={collapsed}
                     title={item.label}
                     icon={<ItemIcon size={16} />}
                     label={item.label}
                     onClick={() =>
-                      item.routeId &&
-                      onSelectView({ kind: "route", id: item.routeId })
+                      item.routeId && navigate(`/plugin/${item.routeId}`)
                     }
                   />
                 </li>
@@ -265,12 +259,12 @@ export default function Sidebar(props: SidebarProps): React.ReactNode {
           {BUILTIN_FOOTER.map((f) => (
             <li className="nav-item" key={f.id}>
               <ItemButton
-                active={isViewEqual(view, f.view)}
+                active={f.match(location.pathname)}
                 collapsed={collapsed}
                 title={f.label}
                 icon={<f.icon size={16} />}
                 label={f.label}
-                onClick={() => onSelectView(f.view)}
+                onClick={() => navigate(f.path)}
               />
             </li>
           ))}
