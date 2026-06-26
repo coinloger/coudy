@@ -8,6 +8,10 @@
  * - thinking-блок.
  *
  * Покриває всі рендерери UI-двигуна (текст, код, tool read/bash/edit+диф, thinking).
+ *
+ * Темп реалістичний і регулюється множником швидкості (1x дефолт):
+ * текст дописується токенами, thinking видимий, tool «працює» (running) перед
+ * видачею результату.
  */
 import type { AgentEvent, AgentMessage } from "@coudycode/agent-core";
 import type {
@@ -23,6 +27,20 @@ import type {
 } from "@coudycode/ai";
 
 export type MockEventEmitter = (event: AgentEvent) => void;
+
+/** Множник швидкості стріму. delayMs = baseDelay / speed (instant → 0). */
+export type MockSpeed = "0.5x" | "1x" | "2x" | "instant";
+
+export interface MockAgentOptions {
+	speed?: MockSpeed;
+}
+
+const SPEED_FACTOR: Record<MockSpeed, number> = {
+	"0.5x": 0.5,
+	"1x": 1,
+	"2x": 2,
+	instant: Infinity,
+};
 
 const USAGE: Usage = {
 	input: 100,
@@ -77,12 +95,32 @@ function tokenize(text: string): string[] {
 	return text.match(/\S+\s*|\s+/g) ?? [text];
 }
 
+/** Створити функцію очікування, що враховує швидкість. */
+function makeWait(speed: MockSpeed): (baseMs: number) => Promise<void> {
+	const factor = SPEED_FACTOR[speed] ?? 1;
+	if (factor === Infinity) {
+		// миттєво — yield макротаску, щоб React встиг промалювати, але без затримки
+		return () => Promise.resolve();
+	}
+	return (baseMs) => sleep(baseMs / factor);
+}
+
 /**
  * Запустити мок-стрім агента для промпту.
- * emit — колбек для подій. Повертає завершені повідомлення.
+ * emit — колбек для подій; speed — множник темпу.
  */
-export async function runMockAgent(prompt: string, emit: MockEventEmitter): Promise<void> {
-	await sleep(150);
+export async function runMockAgent(prompt: string, emit: MockEventEmitter, options?: MockAgentOptions): Promise<void> {
+	const speed: MockSpeed = options?.speed ?? "1x";
+	const wait = makeWait(speed);
+
+	// Базові затримки (на 1x).
+	const T = {
+		phaseGap: 450, // пауза між фазами
+		token: 38, // на чанк тексту
+		thinkToken: 30, // на чанк thinking
+		toolRunning: 1500, // tool «працює» перед результатом
+		toolGap: 500, // пауза перед наступним tool
+	};
 
 	// --- Повідомлення користувача ---
 	const userMessage: UserMessage = {
@@ -91,17 +129,17 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter): Prom
 		timestamp: NOW(),
 	};
 
+	await wait(220);
 	emit({ type: "agent_start" });
 	emit({ type: "turn_start" });
 	emit({ type: "message_start", message: userMessage });
 	emit({ type: "message_end", message: userMessage });
 
-	// --- Асистент: спочатку thinking, потім текст + tool-call'и ---
-	await sleep(200);
+	await wait(T.phaseGap);
 
 	// 1) Thinking-блок
 	const thinking = "Користувач хоче продемонструвати UI. Прочитаю файл, виконаю команду та відредагую файл, щоб показати всі рендерери.";
-	emitAssistantStream(emit, 0, {
+	await emitAssistantStream(emit, 0, {
 		onStart: (p) => {
 			p.content = [thinkingContent("")];
 		},
@@ -110,7 +148,11 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter): Prom
 		},
 		tokens: tokenize(thinking),
 		eventPrefix: "thinking",
+		wait,
+		tokenDelay: T.thinkToken,
 	});
+
+	await wait(T.phaseGap);
 
 	// 2) Текстова відповідь (з markdown + кодом)
 	const text =
@@ -124,59 +166,70 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter): Prom
 		"```\n\n" +
 		"Тепер виконаю інструменти 👇";
 
-	emitAssistantStream(emit, 1, {
+	await emitAssistantStream(emit, 1, {
 		onStart: (p) => {
-			p.content = [...p.content, textContent("")];
+			p.content = [textContent("")];
 		},
 		onDelta: (p, delta) => {
-			const last = p.content[p.content.length - 1] as TextContent;
-			last.text += delta;
+			(p.content[0] as TextContent).text += delta;
 		},
 		tokens: tokenize(text),
 		eventPrefix: "text",
+		wait,
+		tokenDelay: T.token,
 	});
 
-	// Tool-call: read
-	const readCallId = "call_read_1";
-	const readArgs = { path: "src/index.ts" };
-	emit({ type: "tool_execution_start", toolCallId: readCallId, toolName: "read", args: readArgs });
-	await sleep(400);
-	const readFile = 'export const VERSION = "1.0.0";\nexport function main() {\n  console.log(VERSION);\n}\n';
-	emit({
-		type: "message_start",
-		message: assistantMessage([toolCall(readCallId, "read", readArgs)], "toolUse"),
+	await wait(T.phaseGap);
+
+	// --- Tool-call: read (running → result) ---
+	await runTool(emit, {
+		callId: "call_read_1",
+		toolName: "read",
+		args: { path: "src/index.ts" },
+		buildResult: () => {
+			const readFile = 'export const VERSION = "1.0.0";\nexport function main() {\n  console.log(VERSION);\n}\n';
+			return toolResultMessage("call_read_1", "read", [textContent(`Read file [text]\n${readFile}`)], { truncation: { truncated: false } });
+		},
+		wait,
+		runningMs: T.toolRunning,
 	});
-	emit({ type: "message_end", message: assistantMessage([toolCall(readCallId, "read", readArgs)], "toolUse") });
-	const readResult = toolResultMessage(readCallId, "read", [textContent(`Read file [text]\n${readFile}`)], { truncation: { truncated: false } });
-	emit({ type: "message_start", message: readResult });
-	emit({ type: "message_end", message: readResult });
-	emit({ type: "tool_execution_end", toolCallId: readCallId, toolName: "read", result: readResult, isError: false });
 
-	// Tool-call: bash
-	const bashCallId = "call_bash_1";
-	const bashArgs = { command: "npm run build", timeout: 60 };
-	emit({ type: "tool_execution_start", toolCallId: bashCallId, toolName: "bash", args: bashArgs });
-	await sleep(600);
-	const bashResult = toolResultMessage(bashCallId, "bash", [textContent("$ npm run build\n> @coudycode/coudy@0.1.0 build\n> tsgo -p tsconfig.build.json\n\n✓ built in 643ms")], { truncation: { truncated: false } });
-	emit({ type: "message_start", message: bashResult });
-	emit({ type: "message_end", message: bashResult });
-	emit({ type: "tool_execution_end", toolCallId: bashCallId, toolName: "bash", result: bashResult, isError: false });
+	await wait(T.toolGap);
 
-	// Tool-call: edit (з дифом)
-	const editCallId = "call_edit_1";
-	const editArgs = { path: "src/index.ts", edits: [{ oldText: 'export const VERSION = "1.0.0";', newText: 'export const VERSION = "2.0.0";' }] };
-	emit({ type: "tool_execution_start", toolCallId: editCallId, toolName: "edit", args: editArgs });
-	await sleep(500);
+	// --- Tool-call: bash ---
+	await runTool(emit, {
+		callId: "call_bash_1",
+		toolName: "bash",
+		args: { command: "npm run build", timeout: 60 },
+		buildResult: () =>
+			toolResultMessage(
+				"call_bash_1",
+				"bash",
+				[textContent("$ npm run build\n> @coudycode/coudy@0.1.0 build\n> tsgo -p tsconfig.build.json\n\n✓ built in 643ms")],
+				{ truncation: { truncated: false } },
+			),
+		wait,
+		runningMs: T.toolRunning,
+	});
+
+	await wait(T.toolGap);
+
+	// --- Tool-call: edit (з дифом) ---
 	const editDiff = "--- src/index.ts\n+++ src/index.ts\n@@ -1,3 +1,3 @@\n-export const VERSION = \"1.0.0\";\n+export const VERSION = \"2.0.0\";\n export function main() {\n   console.log(VERSION);\n";
-	const editResult = toolResultMessage(editCallId, "edit", [textContent(`Edited src/index.ts`)], { diff: editDiff, patch: editDiff });
-	emit({ type: "message_start", message: editResult });
-	emit({ type: "message_end", message: editResult });
-	emit({ type: "tool_execution_end", toolCallId: editCallId, toolName: "edit", result: editResult, isError: false });
+	await runTool(emit, {
+		callId: "call_edit_1",
+		toolName: "edit",
+		args: { path: "src/index.ts", edits: [{ oldText: 'export const VERSION = "1.0.0";', newText: 'export const VERSION = "2.0.0";' }] },
+		buildResult: () => toolResultMessage("call_edit_1", "edit", [textContent(`Edited src/index.ts`)], { diff: editDiff, patch: editDiff }),
+		wait,
+		runningMs: T.toolRunning,
+	});
+
+	await wait(T.phaseGap);
 
 	// Фінальна відповідь
-	await sleep(200);
 	const finalText = "Готово! Усі інструменти виконано: `read` прочитав файл, `bash` збудував проєкт, а `edit` оновив версію (див. диф вище).";
-	emitAssistantStream(emit, 0, {
+	await emitAssistantStream(emit, 0, {
 		onStart: (p) => {
 			p.content = [textContent("")];
 		},
@@ -185,11 +238,40 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter): Prom
 		},
 		tokens: tokenize(finalText),
 		eventPrefix: "text",
+		wait,
+		tokenDelay: T.token,
 	});
 
 	const finalMessages: AgentMessage[] = [userMessage];
-	emit({ type: "turn_end", message: userMessage, toolResults: [readResult, bashResult, editResult] });
+	emit({ type: "turn_end", message: userMessage, toolResults: [] });
 	emit({ type: "agent_end", messages: finalMessages });
+}
+
+interface ToolRunSpec {
+	callId: string;
+	toolName: string;
+	args: Record<string, unknown>;
+	buildResult: () => ToolResultMessage;
+	wait: (baseMs: number) => Promise<void>;
+	runningMs: number;
+}
+
+/** Виконати tool: emit tool-call → статус running → пауза (видно що працює) → result + done. */
+async function runTool(emit: MockEventEmitter, spec: ToolRunSpec): Promise<void> {
+	// Спочатку подаємо tool-call як частину асистентного повідомлення.
+	const call = toolCall(spec.callId, spec.toolName, spec.args);
+	emit({ type: "message_start", message: assistantMessage([call], "toolUse") });
+	emit({ type: "message_end", message: assistantMessage([call], "toolUse") });
+
+	// Статус running + витримка — видно що tool «працює».
+	emit({ type: "tool_execution_start", toolCallId: spec.callId, toolName: spec.toolName, args: spec.args });
+	await spec.wait(spec.runningMs);
+
+	// Результат + done.
+	const result = spec.buildResult();
+	emit({ type: "message_start", message: result });
+	emit({ type: "message_end", message: result });
+	emit({ type: "tool_execution_end", toolCallId: spec.callId, toolName: spec.toolName, result, isError: false });
 }
 
 interface StreamSpec {
@@ -197,6 +279,8 @@ interface StreamSpec {
 	onDelta: (partial: AssistantMessage, delta: string) => void;
 	tokens: string[];
 	eventPrefix: "text" | "thinking";
+	wait: (baseMs: number) => Promise<void>;
+	tokenDelay: number;
 }
 
 /** Випроменити послідовність text/thinking подій з інкрементальним частковим AssistantMessage. */
@@ -218,18 +302,17 @@ async function emitAssistantStream(emit: MockEventEmitter, contentIndex: number,
 				? { type: "text_delta", contentIndex, delta: token, partial }
 				: { type: "thinking_delta", contentIndex, delta: token, partial };
 		emit({ type: "message_update", message: partial, assistantMessageEvent: deltaEvt });
-		await sleep(20);
+		await spec.wait(spec.tokenDelay);
 	}
 
+	const finalText =
+		spec.eventPrefix === "text"
+			? (partial.content[contentIndex] as TextContent).text
+			: (partial.content[contentIndex] as ThinkingContent).thinking;
 	const endEvt: AssistantMessageEvent =
 		spec.eventPrefix === "text"
-			? {
-					type: "text_end",
-					contentIndex,
-					content: spec.eventPrefix === "text" ? (partial.content[contentIndex] as TextContent).text : "",
-					partial,
-				}
-			: { type: "thinking_end", contentIndex, content: (partial.content[contentIndex] as ThinkingContent).thinking, partial };
+			? { type: "text_end", contentIndex, content: finalText, partial }
+			: { type: "thinking_end", contentIndex, content: finalText, partial };
 	emit({ type: "message_update", message: partial, assistantMessageEvent: endEvt });
 	emit({ type: "message_end", message: partial });
 }
