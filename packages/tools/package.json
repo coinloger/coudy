@@ -1,0 +1,56 @@
+{
+	"name": "@coudycode/tools",
+	"version": "0.1.0",
+	"description": "Agent tools (read/edit/write/bash/grep/find/ls/fetch) — headless, без TUI",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsgo -p tsconfig.build.json",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"dependencies": {
+		"@coudycode/agent-core": "*",
+		"@coudycode/ai": "*",
+		"@silvia-odwyer/photon-node": "0.3.4",
+		"cross-spawn": "7.0.6",
+		"diff": "5.2.0",
+		"jq-wasm": "1.1.0-jq-1.8.1",
+		"typebox": "1.1.38"
+	},
+	"keywords": [
+		"ai",
+		"agent",
+		"tools",
+		"llm",
+		"coudycode"
+	],
+	"author": "coudycode",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/coinloger/coudy.git",
+		"directory": "packages/tools"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"devDependencies": {
+		"@types/cross-spawn": "6.0.6",
+		"@types/diff": "5.2.3",
+		"@types/node": "24.12.4",
+		"@typescript/native-preview": "7.0.0-dev.20260120.1"
+	}
+}
