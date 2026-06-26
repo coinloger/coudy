@@ -1,0 +1,24 @@
+# Залежності
+node_modules/
+
+# Білд-артефакти
+dist/
+/web/dist
+/server/dist
+
+# TypeScript
+*.tsbuildinfo
+
+# Екологи / секрети
+.env
+.env.*
+
+# macOS / OS
+.DS_Store
+
+# pi-agent інфраструктура (не частина проєкту)
+/.pi/
+
+# Логи
+*.log
+npm-debug.log*

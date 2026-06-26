@@ -1,0 +1,11 @@
+{
+  "name": "example-plugin",
+  "version": "1.0.0",
+  "title": "Example Plugin",
+  "description": "Демо: доводить роботу плагінної системи (меню + сторінка + кнопка + віджет)",
+  "enabled": true,
+  "entry": {
+    "backend": "./backend/index.js",
+    "frontend": "./frontend/index.js"
+  }
+}
