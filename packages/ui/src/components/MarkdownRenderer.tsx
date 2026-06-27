@@ -40,7 +40,13 @@ export function MarkdownRenderer({ content, streaming }: MarkdownRendererProps):
 			>
 				{content}
 			</ReactMarkdown>
-			{streaming && <span className="cc-ui-streaming-cursor" />}
+			{streaming && (
+				<span className="cc-ui-streaming-dots" aria-hidden="true">
+					<span />
+					<span />
+					<span />
+				</span>
+			)}
 		</div>
 	);
 }

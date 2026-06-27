@@ -45,6 +45,9 @@ export function ThinkingBlock({ content, streaming }: ThinkingBlockProps): React
 				<span className="cc-ui-thinking-label">
 					{streaming ? "Thinking" : content.redacted ? "Thinking (redacted)" : "Thoughts"}
 				</span>
+				{!content.redacted && content.thinking && (
+					<span className="cc-ui-thinking-preview">{previewText(content.thinking)}</span>
+				)}
 				{streaming && (
 					<span className="cc-ui-thinking-dots" aria-hidden="true">
 						<span />
@@ -74,4 +77,10 @@ export function ThinkingBlock({ content, streaming }: ThinkingBlockProps): React
 			)}
 		</div>
 	);
+}
+
+/** Перших ~80 символів thinking (в один рядок) для превʼю в згорнутому стані. */
+function previewText(text: string, max = 80): string {
+	const t = text.trim().replace(/\s+/g, " ");
+	return t.length > max ? `${t.slice(0, max)}…` : t;
 }
