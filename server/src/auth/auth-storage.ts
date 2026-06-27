@@ -9,6 +9,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { findEnvKeys, getEnvApiKey } from "@coudycode/ai";
+import type { OAuthCredentials, OAuthLoginCallbacks, OAuthProviderId } from "@coudycode/ai";
+import { getOAuthApiKey, getOAuthProvider, getOAuthProviders } from "@coudycode/ai/oauth";
 
 /** API-ключ провайдера (з опційними додатковими env-змінними). */
 export type ApiKeyCredential = {
@@ -17,8 +19,13 @@ export type ApiKeyCredential = {
 	env?: Record<string, string>;
 };
 
-/** Облікові дані (Phase 1: лише api_key). */
-export type AuthCredential = ApiKeyCredential;
+/** OAuth-креденшал (підписка): access/refresh токени + термін. */
+export type OAuthCredential = {
+	type: "oauth";
+} & OAuthCredentials;
+
+/** Облікові дані (api_key АБО oauth). */
+export type AuthCredential = ApiKeyCredential | OAuthCredential;
 
 /** Каталог provider-id → credential. */
 export type AuthStorageData = Record<string, AuthCredential>;
@@ -149,10 +156,52 @@ export class AuthStorage {
 		return { configured: false };
 	}
 
-	/** Отримати ключ для використання: пріоритет stored api_key → env var. */
-	getApiKey(provider: string): string | undefined {
+	/**
+	 * Отримати ключ для використання (async — OAuth потребує refresh):
+	 * пріоритет stored (api_key/oauth → з авто-refresh) → env var.
+	 */
+	async getApiKey(provider: string): Promise<string | undefined> {
 		const cred = this.get(provider);
 		if (cred?.type === "api_key" && cred.key) return cred.key;
+		if (cred?.type === "oauth") {
+			// getOAuthApiKey сам перевірить expires та оновить токен через refreshToken.
+			try {
+				const oauthCreds: Record<string, OAuthCredentials> = { [provider]: cred };
+				const result = await getOAuthApiKey(provider as OAuthProviderId, oauthCreds);
+				if (result) {
+					// Зберегти оновлений токен (нові expires/access/refresh).
+					this.set(provider, { type: "oauth", ...result.newCredentials });
+					return result.apiKey;
+				}
+			} catch {
+				return undefined;
+			}
+			return undefined;
+		}
 		return getEnvApiKey(provider);
+	}
+
+	/** Список OAuth-провайдерів з @coudycode/ai. */
+	getOAuthProviders() {
+		return getOAuthProviders();
+	}
+
+	/** Чи підтримує провайдер OAuth-логін. */
+	isOAuthProvider(provider: string): boolean {
+		return !!getOAuthProvider(provider as OAuthProviderId);
+	}
+
+	/**
+	 * OAuth-логін через провайдер з @coudycode/ai.
+	 * callbacks передаються у провайдер (onAuth/onDeviceCode/...); після успіху
+	 * зберігає {type:"oauth", refresh, access, expires}.
+	 */
+	async login(provider: string, callbacks: OAuthLoginCallbacks): Promise<void> {
+		const oauthProvider = getOAuthProvider(provider as OAuthProviderId);
+		if (!oauthProvider) {
+			throw new Error(`Невідомий OAuth-провайдер: ${provider}`);
+		}
+		const credentials = await oauthProvider.login(callbacks);
+		this.set(provider, { type: "oauth", ...credentials });
 	}
 }

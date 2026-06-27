@@ -395,6 +395,58 @@ body {
 .cc-btn-accent:hover {
   filter: brightness(1.05);
 }
+
+/* === OAuth-логін === */
+.cc-oauth-provider {
+  font-weight: 700;
+  color: var(--pi-text, #1f2328);
+  margin-bottom: 0.5rem;
+}
+.cc-oauth-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.cc-oauth-pending {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+.cc-oauth-hint {
+  font-size: 0.82rem;
+  color: var(--pi-text-muted, #6c6c6c);
+  margin: 0;
+}
+.cc-oauth-devicelink {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  color: var(--pi-md-link, #547da7);
+  text-decoration: none;
+}
+.cc-oauth-devicelink:hover {
+  text-decoration: underline;
+}
+.cc-oauth-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 0.4rem 0.7rem;
+  background: var(--pi-page-bg, #f8f8f8);
+  border: 1px solid var(--pi-border-muted, #b0b0b0);
+  border-radius: 0.4rem;
+  color: var(--pi-text, #1f2328);
+  user-select: all;
+}
+.cc-oauth-waiting {
+  font-size: 0.78rem;
+  color: var(--pi-text-muted, #6c6c6c);
+  font-style: italic;
+}
 .cc-provider-status {
   display: inline-flex;
   align-items: center;

@@ -19,6 +19,15 @@ import { PluginLoader } from "./plugin-loader.js";
 import { AuthStorage } from "./auth/auth-storage.js";
 import { ProviderDefinitions, type ApiType, type ModelDef, type ProviderDefinition } from "./auth/provider-definitions.js";
 import { fetchRemoteModels } from "./auth/fetch-models.js";
+import {
+  buildSessionCallbacks,
+  cancelSession,
+  createSession,
+  markDone,
+  markError,
+  sessionStatus,
+  waitForArmed,
+} from "./auth/oauth-sessions.js";
 
 export interface CoudyServerOptions {
   port?: number;
@@ -289,6 +298,60 @@ export class CoudyServer {
       }
       const result = await fetchRemoteModels(baseUrl, apiKey, apiType as ApiType);
       this.sendJson(res, result.error ? 422 : 200, result);
+      return;
+    }
+
+    // GET /api/oauth/providers — список OAuth-провайдерів (anthropic/copilot/codex).
+    if (method === "GET" && pathname === "/api/oauth/providers") {
+      const providers = this.auth.getOAuthProviders().map((p) => ({
+        id: p.id,
+        name: p.name,
+        callback: !!p.usesCallbackServer,
+      }));
+      this.sendJson(res, 200, { providers });
+      return;
+    }
+
+    // POST /api/providers/:id/oauth/start — ініціювати OAuth-логін у фоні.
+    const oauthStartMatch = /^\/api\/providers\/([^/]+)\/oauth\/start$/.exec(pathname);
+    if (method === "POST" && oauthStartMatch) {
+      const id = decodeURIComponent(oauthStartMatch[1]);
+      if (!this.auth.isOAuthProvider(id)) {
+        this.sendJson(res, 404, { error: "OAuth-провайдер не знайдено" });
+        return;
+      }
+      const session = createSession(id);
+      const callbacks = buildSessionCallbacks(id);
+      // Фоновий логін: заповнює session.url/userCode, потім done/error.
+      this.auth
+        .login(id, callbacks)
+        .then(() => markDone(id))
+        .catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          // Abort не вважаємо помилкою (скасування).
+          if (!/abort/i.test(msg)) markError(id, msg);
+        });
+      // Дочекатись, поки флоу буде «озброєно» (onAuth/onDeviceCode), потім віддати URL/код.
+      await waitForArmed(id);
+      this.sendJson(res, 200, sessionStatus(id) ?? { status: "pending" });
+      return;
+    }
+
+    // GET /api/providers/:id/oauth/poll — статус pending-сесії.
+    const oauthPollMatch = /^\/api\/providers\/([^/]+)\/oauth\/poll$/.exec(pathname);
+    if (method === "GET" && oauthPollMatch) {
+      const id = decodeURIComponent(oauthPollMatch[1]);
+      const status = sessionStatus(id);
+      this.sendJson(res, 200, status ?? { status: "idle" });
+      return;
+    }
+
+    // DELETE /api/oauth/pending/:id — скасувати pending OAuth-логін.
+    const oauthCancelMatch = /^\/api\/oauth\/pending\/([^/]+)$/.exec(pathname);
+    if (method === "DELETE" && oauthCancelMatch) {
+      const id = decodeURIComponent(oauthCancelMatch[1]);
+      cancelSession(id);
+      this.sendJson(res, 200, { ok: true });
       return;
     }
 

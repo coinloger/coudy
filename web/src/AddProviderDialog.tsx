@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import { OAuthLogin, type OAuthProviderInfo } from "./OAuthLogin";
 
 type ApiType = "anthropic-messages" | "openai-completions" | "openai-responses";
 
-type Branch = "openai" | "anthropic" | "custom";
+type Branch = "openai" | "anthropic" | "custom" | "subscription";
 
 export interface FetchedModel {
 	id: string;
@@ -26,6 +27,8 @@ const API_LABEL: Record<ApiType, string> = {
 /** Діалог «Додати провайдера» — 3 гілки: пресет OpenAI / пресет Anthropic / Custom. */
 export function AddProviderDialog({ open, onClose, onDone }: AddProviderDialogProps): React.ReactNode {
 	const [branch, setBranch] = useState<Branch | null>(null);
+	const [oauthProviders, setOauthProviders] = useState<OAuthProviderInfo[]>([]);
+	const [oauthPick, setOauthPick] = useState<OAuthProviderInfo | null>(null);
 	const [apiKey, setApiKey] = useState("");
 	const [label, setLabel] = useState("");
 	const [baseUrl, setBaseUrl] = useState("");
@@ -47,6 +50,11 @@ export function AddProviderDialog({ open, onClose, onDone }: AddProviderDialogPr
 			setModels([]);
 			setBusy(false);
 			setError(null);
+			setOauthPick(null);
+			void fetch("/api/oauth/providers")
+				.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+				.then((d: { providers: OAuthProviderInfo[] }) => setOauthProviders(d.providers ?? []))
+				.catch(() => undefined);
 		}
 	}, [open]);
 
@@ -158,6 +166,12 @@ export function AddProviderDialog({ open, onClose, onDone }: AddProviderDialogPr
 								<strong>Custom</strong>
 								<span className="text-muted">Anthropic/OpenAI-сумісний + baseUrl + моделі</span>
 							</button>
+							{oauthProviders.length > 0 && (
+								<button type="button" className="cc-add-branch" onClick={() => setBranch("subscription")}>
+									<strong>Увійти через підписку</strong>
+									<span className="text-muted">Claude Pro/Max, Copilot, Codex (OAuth)</span>
+								</button>
+							)}
 						</div>
 					)}
 
@@ -279,6 +293,40 @@ export function AddProviderDialog({ open, onClose, onDone }: AddProviderDialogPr
 							</div>
 						</div>
 					)}
+
+				{branch === "subscription" &&
+					(oauthPick ? (
+						<OAuthLogin
+							provider={oauthPick}
+							onDone={() => {
+								setOauthPick(null);
+								onClose();
+								onDone();
+							}}
+							onBack={() => setOauthPick(null)}
+						/>
+					) : (
+						<div>
+							<div className="cc-oauth-pick">
+								{oauthProviders.map((p) => (
+									<button
+										key={p.id}
+										type="button"
+										className="cc-add-branch"
+										onClick={() => setOauthPick(p)}
+									>
+										<strong>{p.name}</strong>
+										<span className="text-muted">{p.callback ? "через браузер" : "device code"}</span>
+									</button>
+								))}
+							</div>
+							<div className="cc-modal-actions">
+								<button type="button" className="btn btn-sm btn-outline-secondary" onClick={reset}>
+									Назад
+								</button>
+							</div>
+						</div>
+					))}
 				</div>
 			</div>
 		</div>
