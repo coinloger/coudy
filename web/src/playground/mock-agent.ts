@@ -172,7 +172,8 @@ async function streamAssistantMessage(emit: MockEventEmitter, blocks: BlockSpec[
 		const block = blocks[ci];
 		const prefix = block.type === "thinking" ? "thinking" : "text";
 		const tokens = tokenize(block.text);
-		for (const token of tokens) {
+		for (let ti = 0; ti < tokens.length; ti++) {
+			const token = tokens[ti];
 			if (block.type === "thinking") {
 				(partial.content[ci] as ThinkingContent).thinking += token;
 			} else {
@@ -188,7 +189,11 @@ async function streamAssistantMessage(emit: MockEventEmitter, blocks: BlockSpec[
 					partial,
 				} as AssistantMessageEvent,
 			});
-			await opts.wait(prefix === "thinking" ? opts.thinkTokenDelay : opts.tokenDelay);
+			// Не чекаємо після останнього токена блоку — наступний блок (напр. відповідь)
+			// починається одразу після thinking, без паузи.
+			if (ti < tokens.length - 1) {
+				await opts.wait(prefix === "thinking" ? opts.thinkTokenDelay : opts.tokenDelay);
+			}
 		}
 		const finalText =
 			block.type === "thinking"
