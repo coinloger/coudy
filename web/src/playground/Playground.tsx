@@ -11,6 +11,7 @@ import {
 import type { AgentEvent, AgentMessage } from "@coudycode/agent-core";
 import "@coudycode/ui/styles.css";
 import { runMockAgent, type MockSpeed } from "./mock-agent";
+import { ModelSelector, type CurrentModel, type ProviderGroup } from "./ModelSelector";
 
 const SPEEDS: MockSpeed[] = ["0.5x", "1x", "2x", "instant"];
 const DEFAULT_PROMPT = "Допоможи розібратись з проектом і додати фічу";
@@ -26,6 +27,10 @@ export default function Playground(): React.ReactNode {
 	const [input, setInput] = useState("");
 	const [speed, setSpeed] = useState<MockSpeed>("1x");
 	const [running, setRunning] = useState(false);
+
+	// Вибір моделі (поточна + каталог провайдерів).
+	const [currentModel, setCurrentModel] = useState<CurrentModel | null>(null);
+	const [catalog, setCatalog] = useState<ProviderGroup[]>([]);
 
 	const workingRef = useRef<ConversationState>(initialConversationState);
 	const lastPromptRef = useRef<string>("");
@@ -86,6 +91,31 @@ export default function Playground(): React.ReactNode {
 		el.style.height = "auto";
 		el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
 	}, [input]);
+
+	// Завантажити поточну модель + каталог при старті.
+	useEffect(() => {
+		void fetch("/api/model")
+			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+			.then((m: CurrentModel) => setCurrentModel(m))
+			.catch(() => undefined);
+		void fetch("/api/models")
+			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+			.then((data: { providers: ProviderGroup[] }) => setCatalog(data.providers ?? []))
+			.catch(() => undefined);
+	}, []);
+
+	const handleSelectModel = (provider: string, modelId: string): void => {
+		void fetch("/api/model", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ provider, modelId }),
+		})
+			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+			.then((m: { label?: string }) =>
+				setCurrentModel({ provider, modelId, label: m.label ?? modelId }),
+			)
+			.catch(() => undefined);
+	};
 
 	const scrollToBottom = (): void => {
 		stickRef.current = true;
@@ -179,6 +209,13 @@ export default function Playground(): React.ReactNode {
 					<span className="text-muted small">— тест рендерингу @coudycode/ui на мок-стрімі</span>
 				</div>
 				<div className="d-flex align-items-center gap-2">
+					{currentModel && (
+						<ModelSelector
+							current={currentModel}
+							catalog={catalog}
+							onSelect={handleSelectModel}
+						/>
+					)}
 					{live.working && <WorkingIndicator label="Агент працює" />}
 					<div className="d-flex align-items-center gap-1">
 						<span className="text-muted small me-1">Темп:</span>

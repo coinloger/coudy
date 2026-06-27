@@ -13,6 +13,8 @@ import http, {
 import { normalize, join } from "node:path";
 import { readFile, stat } from "node:fs/promises";
 import { HookEngine } from "@coudycode/core";
+import { getModels, getProviders } from "@coudycode/ai";
+import type { Api, Model } from "@coudycode/ai";
 import { PluginLoader } from "./plugin-loader.js";
 
 export interface CoudyServerOptions {
@@ -26,6 +28,8 @@ export class CoudyServer {
   private readonly loader: PluginLoader;
   private readonly port: number;
   private startedAt: number | null = null;
+  // Поточна модель (in-memory; дефолт — anthropic/claude-sonnet).
+  private currentModel = { provider: "anthropic", modelId: "claude-sonnet-4-20250514" };
 
   constructor(opts: CoudyServerOptions) {
     this.hooks = new HookEngine();
@@ -87,7 +91,7 @@ export class CoudyServer {
 
     // CORS — фронтенд (Vite) живе на іншому порті.
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
     if (method === "OPTIONS") {
       res.writeHead(204);
@@ -118,6 +122,37 @@ export class CoudyServer {
         startedAt: this.startedAt,
         pluginsCount: this.loader.list().filter(p => p.active).length,
       });
+      return;
+    }
+
+    // GET /api/models — увесь каталог моделей (@coudycode/ai), згрупований за провайдером.
+    if (method === "GET" && pathname === "/api/models") {
+      this.sendJson(res, 200, this.buildModelCatalog());
+      return;
+    }
+
+    // GET /api/model — поточна обрана модель.
+    if (method === "GET" && pathname === "/api/model") {
+      this.sendJson(res, 200, this.getCurrentModelInfo());
+      return;
+    }
+
+    // POST /api/model — змінити поточну модель (body: { provider, modelId }).
+    if (method === "POST" && pathname === "/api/model") {
+      const body = await this.readJsonBody(req);
+      const provider = typeof body?.provider === "string" ? body.provider : null;
+      const modelId = typeof body?.modelId === "string" ? body.modelId : null;
+      if (!provider || !modelId) {
+        this.sendJson(res, 400, { error: "Потрібні поля provider та modelId" });
+        return;
+      }
+      const model = this.findModel(provider, modelId);
+      if (!model) {
+        this.sendJson(res, 404, { error: "Модель не знайдено в каталозі" });
+        return;
+      }
+      this.currentModel = { provider, modelId };
+      this.sendJson(res, 200, this.modelInfo(model));
       return;
     }
 
@@ -174,6 +209,70 @@ export class CoudyServer {
       res.end(data);
     } catch {
       this.sendJson(res, 404, { error: "File not found" });
+    }
+  }
+
+  /** Каталог моделей з @coudycode/ai, згрупований за провайдером (увесь, без фільтру за ключами). */
+  private buildModelCatalog(): { providers: Array<{ provider: string; models: unknown[] }> } {
+    const providers = getProviders();
+    return {
+      providers: providers.map(provider => ({
+        provider,
+        models: getModels(provider).map(m => this.modelInfo(m)),
+      })),
+    };
+  }
+
+  /** Знайти конкретну модель у каталозі. */
+  private findModel(provider: string, modelId: string): Model<Api> | undefined {
+    return getModels(provider as never).find(m => m.id === modelId);
+  }
+
+  /** Публічне представлення моделі (id + людське імʼя + метадані). */
+  private modelInfo(m: Model<Api>): {
+    id: string;
+    label: string;
+    provider: string;
+    api: string;
+    contextWindow: number;
+    maxTokens: number;
+    reasoning: boolean;
+    input: string[];
+  } {
+    return {
+      id: m.id,
+      label: m.name,
+      provider: m.provider,
+      api: m.api,
+      contextWindow: m.contextWindow,
+      maxTokens: m.maxTokens,
+      reasoning: m.reasoning,
+      input: [...m.input],
+    };
+  }
+
+  /** Поточна модель як { provider, modelId, label }. */
+  private getCurrentModelInfo(): { provider: string; modelId: string; label: string } {
+    const m = this.findModel(this.currentModel.provider, this.currentModel.modelId);
+    return {
+      provider: this.currentModel.provider,
+      modelId: this.currentModel.modelId,
+      label: m?.name ?? this.currentModel.modelId,
+    };
+  }
+
+  /** Прочитати JSON-тіло запиту (для POST). */
+  private async readJsonBody(req: IncomingMessage): Promise<Record<string, unknown> | null> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) {
+      chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+    }
+    const raw = Buffer.concat(chunks).toString("utf-8").trim();
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return null;
     }
   }
 
