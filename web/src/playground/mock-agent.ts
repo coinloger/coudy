@@ -190,23 +190,45 @@ interface ToolRunSpec {
 	wait: (baseMs: number) => Promise<void>;
 	runningMs: number;
 	isError?: boolean;
+	toolGap?: number;
 }
 
 /** Виконати tool: emit tool-call → статус running → пауза (видно що працює) → result + end. */
 async function runTool(emit: MockEventEmitter, spec: ToolRunSpec): Promise<void> {
-	const isError = spec.isError ?? false;
-	const callId = uniqueToolId(spec.callBase);
-	const call = toolCall(callId, spec.toolName, spec.args);
-	emit({ type: "message_start", message: assistantMessage([call], "toolUse") });
-	emit({ type: "message_end", message: assistantMessage([call], "toolUse") });
+	await runToolGroup(emit, [spec]);
+}
 
-	emit({ type: "tool_execution_start", toolCallId: callId, toolName: spec.toolName, args: spec.args });
-	await spec.wait(spec.runningMs);
+/**
+ * Виконати ГРУПУ інструментів як ОДНЕ assistant-повідомлення з усіма toolCall-блоками
+ * (семантика реального агента / Claude Code), потім виконати кожен tool послідовно.
+ *
+ * 1) message_start/end з assistantMessage([call1, call2, ...], "toolUse").
+ * 2) для кожного: tool_execution_start → пауза running → result → tool_result message → tool_execution_end.
+ */
+async function runToolGroup(emit: MockEventEmitter, specs: ToolRunSpec[]): Promise<void> {
+	if (specs.length === 0) return;
 
-	const result = spec.buildResult(callId);
-	emit({ type: "message_start", message: result });
-	emit({ type: "message_end", message: result });
-	emit({ type: "tool_execution_end", toolCallId: callId, toolName: spec.toolName, result, isError });
+	// Підготувати всі виклики групи (унікальні id) і єдине assistant-повідомлення.
+	const items = specs.map((spec) => {
+		const callId = uniqueToolId(spec.callBase);
+		return { spec, callId, call: toolCall(callId, spec.toolName, spec.args) };
+	});
+	const assistantMsg = assistantMessage(items.map((it) => it.call), "toolUse");
+	emit({ type: "message_start", message: assistantMsg });
+	emit({ type: "message_end", message: assistantMsg });
+
+	// Виконати кожен tool послідовно (статус running → done/error по черзі).
+	for (const { spec, callId, call } of items) {
+		const isError = spec.isError ?? false;
+		emit({ type: "tool_execution_start", toolCallId: callId, toolName: spec.toolName, args: call.arguments });
+		await spec.wait(spec.runningMs);
+
+		const result = spec.buildResult(callId);
+		emit({ type: "message_start", message: result });
+		emit({ type: "message_end", message: result });
+		emit({ type: "tool_execution_end", toolCallId: callId, toolName: spec.toolName, result, isError });
+		await spec.wait(spec.toolGap ?? 80);
+	}
 }
 
 /**
@@ -254,7 +276,7 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 	await wait(T.phaseGap);
 
 	// === Раунд інструментів 1: ls + read ===
-	await runTool(emit, {
+	const lsSpec: ToolRunSpec = {
 		callBase: "ls",
 		toolName: "ls",
 		args: { path: "." },
@@ -275,9 +297,8 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 			]),
 		wait,
 		runningMs: T.toolRunning,
-	});
-	await wait(T.toolGap);
-	await runTool(emit, {
+	};
+	const readPackageSpec: ToolRunSpec = {
 		callBase: "read",
 		toolName: "read",
 		args: { path: "package.json" },
@@ -307,7 +328,8 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 			),
 		wait,
 		runningMs: T.toolRunning,
-	});
+	};
+	await runToolGroup(emit, [lsSpec, readPackageSpec]);
 	await wait(T.phaseGap);
 
 	// === Фаза 2: thinking + текст ===
@@ -328,7 +350,7 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 	await wait(T.phaseGap);
 
 	// === Раунд інструментів 2: grep + find + read ===
-	await runTool(emit, {
+	const grepSpec: ToolRunSpec = {
 		callBase: "grep",
 		toolName: "grep",
 		args: { pattern: "AgentMessage", path: "packages/agent/src", glob: "*.ts" },
@@ -350,9 +372,8 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 			),
 		wait,
 		runningMs: T.toolRunning,
-	});
-	await wait(T.toolGap);
-	await runTool(emit, {
+	};
+	const findSpec: ToolRunSpec = {
 		callBase: "find",
 		toolName: "find",
 		args: { pattern: "*.tsx", path: "web/src" },
@@ -377,9 +398,8 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 			),
 		wait,
 		runningMs: T.toolRunning,
-	});
-	await wait(T.toolGap);
-	await runTool(emit, {
+	};
+	const readAppSpec: ToolRunSpec = {
 		callBase: "read",
 		toolName: "read",
 		args: { path: "web/src/App.tsx", offset: 86, limit: 12 },
@@ -405,7 +425,8 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 			),
 		wait,
 		runningMs: T.toolRunning,
-	});
+	};
+	await runToolGroup(emit, [grepSpec, findSpec, readAppSpec]);
 	await wait(T.phaseGap);
 
 	// === Фаза 3: thinking + НАСИЧЕНИЙ markdown (усі елементи + код у 4 мовах) ===
@@ -504,15 +525,14 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 		" export type {",
 		"   PluginContext,",
 	);
-	await runTool(emit, {
+	const editSpec: ToolRunSpec = {
 		callBase: "edit",
 		toolName: "edit",
 		args: { path: "packages/core/src/index.ts", edits: [{ oldText: 'export { CoreHooks } from "./types";', newText: 'export { CoreHooks, PluginManifest } from "./types";' }] },
 		buildResult: (id) => toolResultMessage(id, "edit", [textContent("Edited packages/core/src/index.ts")], { diff: editDiff, patch: editDiff }),
 		wait,
 		runningMs: T.toolRunning,
-	});
-	await wait(T.toolGap);
+	};
 	const writeDiff = md(
 		"--- /dev/null",
 		"+++ packages/core/src/utils.ts",
@@ -522,16 +542,15 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 		'+  return `${prefix}_${Date.now().toString(36)}`;',
 		"+}",
 	);
-	await runTool(emit, {
+	const writeSpec: ToolRunSpec = {
 		callBase: "write",
 		toolName: "write",
 		args: { path: "packages/core/src/utils.ts", content: "export function uid(prefix = \"id\"): string {\n  return `${prefix}_${Date.now().toString(36)}`;\n}\n" },
 		buildResult: (id) => toolResultMessage(id, "write", [textContent("Created packages/core/src/utils.ts")], { diff: writeDiff, patch: writeDiff }),
 		wait,
 		runningMs: T.toolRunning,
-	});
-	await wait(T.toolGap);
-	await runTool(emit, {
+	};
+	const bashSpec: ToolRunSpec = {
 		callBase: "bash",
 		toolName: "bash",
 		args: { command: "npm run build --workspace=packages/core", timeout: 60 },
@@ -559,7 +578,8 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 			),
 		wait,
 		runningMs: T.bashRunning,
-	});
+	};
+	await runToolGroup(emit, [editSpec, writeSpec, bashSpec]);
 	await wait(T.phaseGap);
 
 	// === Раунд інструментів 4: fetch (JSON) ===
