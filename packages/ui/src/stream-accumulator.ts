@@ -47,14 +47,15 @@ export function applyEvent(state: ConversationState, event: AgentEvent): Convers
 			return { ...state, streamingMessage: event.message };
 		case "message_update": {
 			const { message, assistantMessageEvent } = event;
-			// Останній блок, що стрімиться — за contentIndex з події.
+			// Активний лише ОДИН потік (text XOR thinking): коли стрімиться один —
+			// індекс іншого скидаємо, щоб курсор був у єдиному місці.
 			if ("contentIndex" in assistantMessageEvent) {
 				const idx = assistantMessageEvent.contentIndex;
 				if (assistantMessageEvent.type.startsWith("text")) {
-					return { ...state, streamingMessage: message, streamingTextIndex: idx };
+					return { ...state, streamingMessage: message, streamingTextIndex: idx, streamingThinkingIndex: undefined };
 				}
 				if (assistantMessageEvent.type.startsWith("thinking")) {
-					return { ...state, streamingMessage: message, streamingThinkingIndex: idx };
+					return { ...state, streamingMessage: message, streamingThinkingIndex: idx, streamingTextIndex: undefined };
 				}
 			}
 			return { ...state, streamingMessage: message };

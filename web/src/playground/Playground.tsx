@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Square } from "lucide-react";
 import {
 	ConversationView,
 	WorkingIndicator,
@@ -30,6 +30,8 @@ export default function Playground(): React.ReactNode {
 	const workingRef = useRef<ConversationState>(initialConversationState);
 	const lastPromptRef = useRef<string>("");
 	const scrollRef = useRef<HTMLDivElement>(null);
+	const inputRef = useRef<HTMLTextAreaElement>(null);
+	const abortRef = useRef<AbortController | null>(null);
 	// Smart auto-scroll ("stick to bottom"): тягнемо донизу лише якщо користувач біля низу.
 	const stickRef = useRef(true);
 	const [showScrollBtn, setShowScrollBtn] = useState(false);
@@ -58,6 +60,14 @@ export default function Playground(): React.ReactNode {
 		stickRef.current = atBottom;
 		if (atBottom) setShowScrollBtn(false);
 	};
+
+	// Auto-grow текстового поля за висотою (max ~160px), далі — внутрішній скрол.
+	useEffect(() => {
+		const el = inputRef.current;
+		if (!el) return;
+		el.style.height = "auto";
+		el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+	}, [input]);
 
 	const scrollToBottom = (): void => {
 		const el = scrollRef.current;
@@ -89,7 +99,40 @@ export default function Playground(): React.ReactNode {
 		setRunning(true);
 		workingRef.current = initialConversationState;
 		setLive(initialConversationState);
-		void runMockAgent(prompt, onEvent, { speed }).finally(() => setRunning(false));
+		const controller = new AbortController();
+		abortRef.current = controller;
+		runMockAgent(prompt, onEvent, { speed, signal: controller.signal })
+			.catch(() => {
+				// Переривання (Стоп) або помилка моку — partial фінішиться у finally.
+			})
+			.finally(() => {
+				// На нормальному завершенні workingRef вже порожній (agent_end) — пропустимо.
+				// На перериванні — комітимо partial-повідомлення як є у історію.
+				const turn = workingRef.current;
+				if (turn.streamingMessage || turn.messages.length > 0) {
+					const msgs = [...turn.messages];
+					if (turn.streamingMessage) msgs.push(turn.streamingMessage);
+					const statuses = { ...turn.toolStatus };
+					for (const k of Object.keys(statuses)) if (statuses[k] === "running") statuses[k] = "done";
+					setCommitted((prev) => [...prev, ...msgs]);
+					setCommittedStatus((prev) => ({ ...prev, ...statuses }));
+				}
+				workingRef.current = initialConversationState;
+				setLive(initialConversationState);
+				setRunning(false);
+				abortRef.current = null;
+			});
+	};
+
+	const handleStop = (): void => {
+		abortRef.current?.abort();
+	};
+
+	const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+		if (e.key === "Enter" && !e.shiftKey) {
+			e.preventDefault();
+			startStream(input.trim() || DEFAULT_PROMPT);
+		}
 	};
 
 	const handleSend = (e: React.FormEvent): void => {
@@ -190,18 +233,34 @@ export default function Playground(): React.ReactNode {
 			</div>
 
 			<div className="border-top p-3 bg-white">
-				<form onSubmit={handleSend} className="d-flex gap-2" style={{ maxWidth: 900, margin: "0 auto" }}>
-					<input
-						type="text"
+				<form onSubmit={handleSend} className="d-flex gap-2 align-items-end" style={{ maxWidth: 900, margin: "0 auto" }}>
+					<textarea
+						ref={inputRef}
 						className="form-control"
 						placeholder="Введіть промпт…"
 						value={input}
 						onChange={(e) => setInput(e.target.value)}
+						onKeyDown={handleKeyDown}
 						disabled={running}
+						rows={1}
+						autoFocus
+						title="Enter — відправка, Shift+Enter — новий рядок"
+						style={{ resize: "none", maxHeight: 160, overflowY: "auto" }}
 					/>
-					<button type="submit" className="btn btn-primary" disabled={running}>
-						Надіслати
-					</button>
+					{running ? (
+						<button
+							type="button"
+							className="btn btn-danger d-flex align-items-center gap-1"
+							onClick={handleStop}
+							title="Зупинити генерацію"
+						>
+							<Square size={14} /> Стоп
+						</button>
+					) : (
+						<button type="submit" className="btn btn-primary">
+							Надіслати
+						</button>
+					)}
 				</form>
 			</div>
 		</div>

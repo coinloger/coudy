@@ -29,6 +29,8 @@ export type MockSpeed = "0.5x" | "1x" | "2x" | "instant";
 
 export interface MockAgentOptions {
 	speed?: MockSpeed;
+	/** Сигнал переривання стріму (кнопка Стоп). */
+	signal?: AbortSignal;
 }
 
 const SPEED_FACTOR: Record<MockSpeed, number> = {
@@ -90,7 +92,27 @@ function toolResultMessage(
 	};
 }
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+/** Помилка переривання мок-стріму (кнопка Стоп). */
+class MockAbortError extends Error {
+	constructor() {
+		super("Mock agent aborted");
+		this.name = "AbortError";
+	}
+}
+
+const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
+	new Promise((resolve, reject) => {
+		if (signal?.aborted) return reject(new MockAbortError());
+		const onAbort = (): void => {
+			clearTimeout(timer);
+			reject(new MockAbortError());
+		};
+		const timer = setTimeout(() => {
+			signal?.removeEventListener("abort", onAbort);
+			resolve();
+		}, ms);
+		signal?.addEventListener("abort", onAbort, { once: true });
+	});
 
 /** Розрізати текст на токени для імітації стрімінгу (по слову + пробілу). */
 function tokenize(text: string): string[] {
@@ -100,13 +122,13 @@ function tokenize(text: string): string[] {
 /** Зібрати markdown з рядків (backticks безпечні у double-quoted рядках). */
 const md = (...lines: string[]): string => lines.join("\n");
 
-/** Створити функцію очікування, що враховує швидкість. */
-function makeWait(speed: MockSpeed): (baseMs: number) => Promise<void> {
+/** Створити функцію очікування, що враховує швидкість та переривання. */
+function makeWait(speed: MockSpeed, signal?: AbortSignal): (baseMs: number) => Promise<void> {
 	const factor = SPEED_FACTOR[speed] ?? 1;
 	if (factor === Infinity) {
-		return () => Promise.resolve();
+		return () => (signal?.aborted ? Promise.reject(new MockAbortError()) : Promise.resolve());
 	}
-	return (baseMs) => sleep(baseMs / factor);
+	return (baseMs) => sleep(baseMs / factor, signal);
 }
 
 /** Глобальний лічильник для унікальних toolCallId між прогонами (щоб уникнути колізій join'у при накопиченні). */
@@ -237,7 +259,8 @@ async function runToolGroup(emit: MockEventEmitter, specs: ToolRunSpec[]): Promi
  */
 export async function runMockAgent(prompt: string, emit: MockEventEmitter, options?: MockAgentOptions): Promise<void> {
 	const speed: MockSpeed = options?.speed ?? "1x";
-	const wait = makeWait(speed);
+	const signal = options?.signal;
+	const wait = makeWait(speed, signal);
 
 	const T = {
 		phaseGap: 450,
