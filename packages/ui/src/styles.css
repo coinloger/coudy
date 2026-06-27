@@ -165,10 +165,10 @@
 	border-left: 3px solid var(--pi-border-muted);
 	color: var(--pi-text-muted);
 }
-/* код-блок (темна тема oneDark — лишається темним) */
+/* код-блок (світла тема — узгоджено зі світлою сторінкою pi) */
 .cc-ui-msg-body pre {
-	background: #1e1e2e;
-	color: #e9ecef;
+	background: #f1f3f5;
+	color: #1f2328;
 	border-radius: 0.4rem;
 	padding: 0.75rem;
 	overflow-x: auto;
