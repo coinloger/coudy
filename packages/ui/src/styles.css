@@ -217,3 +217,122 @@
 		transform: rotate(360deg);
 	}
 }
+
+/* === Claude Code-стайл tool call / group (компактні summary-рядки) === */
+
+/* один tool-call — компактний рядок */
+.cc-ui-tc {
+	font-size: 0.85rem;
+	margin: 0.2rem 0;
+}
+.cc-ui-tc-row {
+	display: flex;
+	align-items: center;
+	gap: 0.4rem;
+	padding: 0.15rem 0.35rem;
+	border-radius: 0.35rem;
+	cursor: pointer;
+	user-select: none;
+	line-height: 1.5;
+}
+.cc-ui-tc-row:hover {
+	background: rgba(99, 102, 241, 0.08);
+}
+.cc-ui-tc-icon {
+	font-size: 0.7rem;
+	flex-shrink: 0;
+	width: 0.7rem;
+	text-align: center;
+}
+.cc-ui-tc-desc {
+	flex-grow: 1;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.cc-ui-tc-running-text {
+	color: #997404;
+}
+.cc-ui-tc-chevron {
+	flex-shrink: 0;
+	color: #9aa0a6;
+	font-size: 0.7rem;
+}
+
+/* статуси (колір іконки) */
+.cc-ui-tc-done .cc-ui-tc-icon {
+	color: #0f5132;
+}
+.cc-ui-tc-running .cc-ui-tc-icon {
+	color: #f59f00;
+}
+.cc-ui-tc-error .cc-ui-tc-icon {
+	color: #c92a2a;
+}
+.cc-ui-tc-error .cc-ui-tc-desc {
+	color: #c92a2a;
+}
+.cc-ui-tc-pending .cc-ui-tc-icon {
+	color: #adb5bd;
+}
+
+/* розкриті деталі окремого інструменту */
+.cc-ui-tc-detail {
+	padding: 0.35rem 0.5rem 0.35rem 1.4rem;
+	margin-top: 0.1rem;
+	border-left: 2px solid #e9ecef;
+}
+.cc-ui-tc-label {
+	font-size: 0.68rem;
+	text-transform: uppercase;
+	color: #6c757d;
+	font-weight: 600;
+	margin: 0.3rem 0 0.2rem;
+}
+.cc-ui-tc-detail pre {
+	background: #f8f9fa;
+	border-radius: 0.35rem;
+	padding: 0.5rem;
+	overflow: auto;
+	font-size: 0.78rem;
+	margin: 0;
+	max-height: 22rem;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+/* група інструментів */
+.cc-ui-tg-detail {
+	padding: 0.25rem 0 0.25rem 0.5rem;
+	margin-top: 0.1rem;
+	border-left: 2px solid #e9ecef;
+}
+.cc-ui-tg-entry {
+	margin: 0.15rem 0;
+}
+.cc-ui-tg-branch {
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.76rem;
+	color: #868e96;
+	padding: 0.05rem 0 0.05rem 0.6rem;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+/* вкладений ToolCall усередині групи — без зайвого відступу зверху */
+.cc-ui-tg-entry .cc-ui-tc {
+	margin: 0;
+}
+.cc-ui-tg-more {
+	background: none;
+	border: none;
+	color: #6366f1;
+	font-size: 0.76rem;
+	cursor: pointer;
+	padding: 0.15rem 0.6rem;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.cc-ui-tg-more:hover {
+	text-decoration: underline;
+}

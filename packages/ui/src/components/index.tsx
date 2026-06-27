@@ -3,8 +3,10 @@ export { AssistantMessage, type AssistantMessageProps, type ToolResultIndex } fr
 export { UserMessage, type UserMessageProps } from "./UserMessage.tsx";
 export { SystemMessage, type SystemMessageProps } from "./SystemMessage.tsx";
 export { MarkdownRenderer, type MarkdownRendererProps } from "./MarkdownRenderer.tsx";
+export { describeToolCall, describeToolGroup, toolCallPreview, basename, TOOL_VERB, type ToolActionVerb } from "./tool-summary.ts";
 export { CodeBlock, type CodeBlockProps } from "./CodeBlock.tsx";
 export { ToolCall, type ToolCallProps, type ToolCallStatus } from "./ToolCall.tsx";
+export { ToolGroup, type ToolGroupProps, type ToolGroupEntry } from "./ToolGroup.tsx";
 export { ToolResult, type ToolResultProps, type ToolResultDiff } from "./ToolResult.tsx";
 export { Diff, type DiffProps } from "./Diff.tsx";
 export { ThinkingBlock, type ThinkingBlockProps } from "./ThinkingBlock.tsx";

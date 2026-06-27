@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ToolCall as ToolCallContent } from "@coudycode/ai";
+import { describeToolCall } from "./tool-summary.ts";
 
 export type ToolCallStatus = "running" | "done" | "error";
 
@@ -8,22 +9,35 @@ export interface ToolCallProps {
 	call: ToolCallContent;
 	/** Статус виконання (з tool_execution_* подій). */
 	status?: ToolCallStatus;
-	/** Дочірній вміст — результат інструменту (рендериться у тілі). */
+	/** Дочірній вміст — результат інструменту (рендериться при розкритті). */
 	children?: React.ReactNode;
-	/** За замовч. згорнутий під час running, розгорнутий коли done/error. */
+	/** За замовч. згорнуто. */
 	defaultOpen?: boolean;
 }
 
-/** Виклик інструменту: ім'я, аргументи (JSON), статус, розгортається/згортається. */
+const STATUS_ICON: Record<ToolCallStatus, string> = {
+	running: "⏺",
+	done: "✓",
+	error: "✕",
+};
+
+/** Один інструмент: компактний summary-рядок (⏺ опис статус ▸) + розкриття деталей. */
 export function ToolCall({ call, status, children, defaultOpen }: ToolCallProps): React.ReactNode {
-	const [open, setOpen] = useState<boolean>(defaultOpen ?? status === "error");
+	const [open, setOpen] = useState<boolean>(defaultOpen ?? false);
 	const statusClass =
-		status === "running" ? "cc-ui-tool-status-running" : status === "error" ? "cc-ui-tool-status-error" : status === "done" ? "cc-ui-tool-status-done" : "";
-	const statusLabel = status === "running" ? "виконується" : status === "error" ? "помилка" : status === "done" ? "готово" : "";
+		status === "running"
+			? "cc-ui-tc-running"
+			: status === "error"
+				? "cc-ui-tc-error"
+				: status === "done"
+					? "cc-ui-tc-done"
+					: "cc-ui-tc-pending";
+	const description = describeToolCall(call);
+
 	return (
-		<div className="cc-ui-tool">
+		<div className="cc-ui-tc">
 			<div
-				className="cc-ui-tool-head"
+				className={`cc-ui-tc-row ${statusClass}`}
 				onClick={() => setOpen((v) => !v)}
 				role="button"
 				tabIndex={0}
@@ -34,21 +48,22 @@ export function ToolCall({ call, status, children, defaultOpen }: ToolCallProps)
 					}
 				}}
 			>
-				<span>{open ? "▼" : "▶"}</span>
-				<span className="cc-ui-tool-name">{call.name}</span>
-				{statusLabel && <span className={`cc-ui-tool-status ${statusClass}`}>{statusLabel}</span>}
+				<span className="cc-ui-tc-icon">{status ? STATUS_ICON[status] : "⏺"}</span>
+				<span className="cc-ui-tc-desc">{description}</span>
+				{status === "running" && <span className="cc-ui-tc-running-text">…</span>}
+				<span className="cc-ui-tc-chevron">{open ? "▾" : "▸"}</span>
 			</div>
 			{open && (
-				<div className="cc-ui-tool-body">
+				<div className="cc-ui-tc-detail">
 					{Object.keys(call.arguments ?? {}).length > 0 && (
 						<>
-							<div className="cc-ui-tool-args-label">Аргументи</div>
+							<div className="cc-ui-tc-label">Аргументи</div>
 							<pre>{JSON.stringify(call.arguments, null, 2)}</pre>
 						</>
 					)}
 					{children && (
 						<>
-							<div className="cc-ui-tool-result-label">Результат</div>
+							<div className="cc-ui-tc-label">Результат</div>
 							{children}
 						</>
 					)}

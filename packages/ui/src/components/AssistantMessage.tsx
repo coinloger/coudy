@@ -2,6 +2,7 @@ import type { AssistantMessage as AssistantMessageType } from "@coudycode/ai";
 import { MarkdownRenderer } from "./MarkdownRenderer.tsx";
 import { ThinkingBlock } from "./ThinkingBlock.tsx";
 import { ToolCall } from "./ToolCall.tsx";
+import { ToolGroup, type ToolGroupEntry } from "./ToolGroup.tsx";
 import { ToolResult } from "./ToolResult.tsx";
 import type { ToolCallStatus } from "./ToolCall.tsx";
 
@@ -28,7 +29,37 @@ export interface AssistantMessageProps {
 	streamingThinkingIndex?: number;
 }
 
-/** Повідомлення асистента: текст (markdown), thinking, tool-call'и з результатами. */
+/** Один контент-блок у вигляді "сегмента" рендеру. */
+type Segment =
+	| { kind: "text"; index: number }
+	| { kind: "thinking"; index: number }
+	| { kind: "tools"; indices: number[] };
+
+/**
+ * Розбити контент на сегменти: текст/thinking окремо, послідовні tool-call'и
+ * об'єднуються в один tools-сегмент (для групування).
+ */
+function segmentContent(content: AssistantMessageType["content"]): Segment[] {
+	const segments: Segment[] = [];
+	for (let i = 0; i < content.length; i++) {
+		const block = content[i];
+		if (block.type === "toolCall") {
+			const last = segments[segments.length - 1];
+			if (last && last.kind === "tools") {
+				last.indices.push(i);
+			} else {
+				segments.push({ kind: "tools", indices: [i] });
+			}
+		} else if (block.type === "text") {
+			segments.push({ kind: "text", index: i });
+		} else if (block.type === "thinking") {
+			segments.push({ kind: "thinking", index: i });
+		}
+	}
+	return segments;
+}
+
+/** Повідомлення асистента: текст (markdown), thinking, tool-call'и (з групуванням) з результатами. */
 export function AssistantMessage({
 	message,
 	toolResults,
@@ -36,46 +67,57 @@ export function AssistantMessage({
 	streamingTextIndex,
 	streamingThinkingIndex,
 }: AssistantMessageProps): React.ReactNode {
+	const segments = segmentContent(message.content);
+
+	/** Побудувати результат для tool-call за його id. */
+	const renderResult = (callId: string, toolName: string): React.ReactNode => {
+		const results = toolResults?.[callId];
+		if (!results || results.length === 0) return undefined;
+		return (
+			<ToolResult
+				toolName={toolName}
+				content={results.map((r) => r.content)}
+				isError={results.some((r) => r.isError)}
+				details={results[0]?.details}
+				diff={results[0]?.diff}
+			/>
+		);
+	};
+
 	return (
 		<div className="cc-ui-msg cc-ui-msg-assistant">
 			<div className="cc-ui-msg-role">Асистент</div>
-			{message.content.map((block, idx) => {
-				if (block.type === "text") {
-					return (
-						<MarkdownRenderer
-							key={idx}
-							content={block.text}
-							streaming={streamingTextIndex === idx}
-						/>
-					);
+			{segments.map((seg, sIdx) => {
+				if (seg.kind === "text") {
+					const block = message.content[seg.index];
+					if (block.type !== "text") return null;
+					return <MarkdownRenderer key={sIdx} content={block.text} streaming={streamingTextIndex === seg.index} />;
 				}
-				if (block.type === "thinking") {
-					return (
-						<ThinkingBlock
-							key={idx}
-							content={block}
-							streaming={streamingThinkingIndex === idx}
-						/>
-					);
+				if (seg.kind === "thinking") {
+					const block = message.content[seg.index];
+					if (block.type !== "thinking") return null;
+					return <ThinkingBlock key={sIdx} content={block} streaming={streamingThinkingIndex === seg.index} />;
 				}
-				if (block.type === "toolCall") {
-					const status = toolStatus?.[block.id];
-					const results = toolResults?.[block.id];
+				// tools-сегмент: 1 → ToolCall, >1 → ToolGroup.
+				const calls = seg.indices.map((i) => message.content[i]);
+				if (calls.length === 1) {
+					const block = calls[0];
+					if (block.type !== "toolCall") return null;
 					return (
-						<ToolCall key={idx} call={block} status={status}>
-							{results && results.length > 0 && (
-								<ToolResult
-									toolName={block.name}
-									content={results.map((r) => r.content)}
-									isError={results.some((r) => r.isError)}
-									details={results[0]?.details}
-									diff={results[0]?.diff}
-								/>
-							)}
+						<ToolCall key={sIdx} call={block} status={toolStatus?.[block.id]}>
+							{renderResult(block.id, block.name)}
 						</ToolCall>
 					);
 				}
-				return null;
+				const entries: ToolGroupEntry[] = calls
+					.map((block) => (block.type === "toolCall" ? block : null))
+					.filter((b): b is NonNullable<typeof b> => b !== null)
+					.map((block) => ({
+						call: block,
+						status: toolStatus?.[block.id],
+						result: renderResult(block.id, block.name),
+					}));
+				return <ToolGroup key={sIdx} entries={entries} />;
 			})}
 		</div>
 	);
