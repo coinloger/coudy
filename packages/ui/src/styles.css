@@ -71,10 +71,10 @@
 	word-break: break-word;
 	color: var(--pi-text);
 }
-/* картка текстового/markdown контенту асистента */
+/* картка текстового/markdown контенту асистента (прозора — зливається зі сторінкою) */
 .cc-ui-msg-card {
 	border-radius: 0.5rem;
-	background: var(--pi-card-bg);
+	background: transparent;
 	margin: 0.25rem 0;
 }
 .cc-ui-msg-card > .cc-ui-msg-body {
