@@ -7,6 +7,7 @@ import {
 	ChevronDown,
 	ChevronRight,
 	CircleAlert,
+	CornerDownRight,
 	Loader2,
 	TOOL_ICON,
 } from "./tool-icons.ts";
@@ -72,6 +73,7 @@ export function ToolCall({ call, status, children, defaultOpen }: ToolCallProps)
 			</div>
 			{!open && (
 				<div className="cc-ui-tc-peek" title={preview}>
+					<CornerDownRight size={13} className="cc-ui-tc-peek-mark" />
 					<span className="cc-ui-tc-peek-text">{preview}</span>
 				</div>
 			)}

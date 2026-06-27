@@ -7,6 +7,7 @@ import {
 	ChevronDown,
 	ChevronRight,
 	CircleAlert,
+	CornerDownRight,
 	FilePlus,
 	FileText,
 	Folder,
@@ -34,4 +35,4 @@ export const TOOL_ICON: Record<string, LucideIcon> = {
 /** Іконка за замовчуванням для невідомого типу. */
 export const DEFAULT_TOOL_ICON: LucideIcon = Terminal;
 
-export { Check, ChevronDown, ChevronRight, CircleAlert, Loader2 };
+export { Check, ChevronDown, ChevronRight, CircleAlert, CornerDownRight, Loader2 };

@@ -301,15 +301,20 @@
 	align-items: center;
 }
 
-/* згорнутий peek: превʼю останнього tool-виклику (CSS border-left коннектор) */
+/* згорнутий peek: кутова стрілка ⎿ (CornerDownRight) + превʼю останнього tool-виклику */
 .cc-ui-tc-peek {
+	display: flex;
+	align-items: center;
+	gap: 0.25rem;
 	padding: 0.05rem 0 0.1rem 1.45rem;
-	margin-left: 0.45rem;
 	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 	font-size: 0.76rem;
 	color: #868e96;
 	line-height: 1.45;
-	border-left: 1.5px solid #e0e4e8;
+}
+.cc-ui-tc-peek-mark {
+	flex-shrink: 0;
+	color: #b0b6bd;
 }
 .cc-ui-tc-peek-text {
 	white-space: nowrap;
@@ -371,13 +376,14 @@
 	margin: 0.15rem 0;
 }
 .cc-ui-tg-branch {
+	display: flex;
+	align-items: center;
+	gap: 0.25rem;
 	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 	font-size: 0.76rem;
 	color: #868e96;
 	padding: 0.05rem 0 0.05rem 1.05rem;
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
+}
 }
 /* вкладений ToolCall усередині групи — без зайвого відступу зверху */
 .cc-ui-tg-entry .cc-ui-tc {

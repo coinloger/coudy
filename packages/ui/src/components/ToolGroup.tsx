@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { ToolCall } from "@coudycode/ai";
 import { ToolCall as ToolCallView, type ToolCallStatus } from "./ToolCall.tsx";
 import { describeToolGroup, toolCallPreview } from "./tool-summary.ts";
-import { ChevronDown, ChevronRight, Loader2 } from "./tool-icons.ts";
+import { Check, ChevronDown, ChevronRight, CircleAlert, CornerDownRight, Loader2 } from "./tool-icons.ts";
 
 /** Поріг: якщо інструментів більше, показуємо перші N + "(+X more)". */
 const PREVIEW_LIMIT = 4;
@@ -66,11 +66,16 @@ export function ToolGroup({ entries }: ToolGroupProps): React.ReactNode {
 					{calls.length}
 				</span>
 				<span className="cc-ui-tc-desc">{summary}</span>
-				{groupStatus === "running" && (
-					<span className="cc-ui-tc-statusicon">
+				{groupStatus === "running" && <span className="cc-ui-tc-running-text">…</span>}
+				<span className="cc-ui-tc-statusicon">
+					{groupStatus === "running" ? (
 						<Loader2 size={13} className="cc-ui-spin" />
-					</span>
-				)}
+					) : groupStatus === "error" ? (
+						<CircleAlert size={13} className="cc-ui-tc-error-icon" />
+					) : (
+						<Check size={13} className="cc-ui-tc-done-icon" />
+					)}
+				</span>
 				<span className="cc-ui-tc-chevron">{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
 			</div>
 			{!open && lastPreview && (
@@ -83,7 +88,8 @@ export function ToolGroup({ entries }: ToolGroupProps): React.ReactNode {
 					{visible.map((entry, i) => (
 						<div className="cc-ui-tg-entry" key={entry.call.id ?? i}>
 							<div className="cc-ui-tg-branch" title={toolCallPreview(entry.call)}>
-								{toolCallPreview(entry.call)}
+								<CornerDownRight size={13} className="cc-ui-tc-peek-mark" />
+								<span className="cc-ui-tc-peek-text">{toolCallPreview(entry.call)}</span>
 							</div>
 							<ToolCallView call={entry.call} status={entry.status} defaultOpen={entry.status === "error"}>
 								{entry.result}
