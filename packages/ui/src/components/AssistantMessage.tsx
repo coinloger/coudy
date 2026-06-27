@@ -91,7 +91,11 @@ export function AssistantMessage({
 				if (seg.kind === "text") {
 					const block = message.content[seg.index];
 					if (block.type !== "text") return null;
-					return <MarkdownRenderer key={sIdx} content={block.text} streaming={streamingTextIndex === seg.index} />;
+					return (
+						<div className="cc-ui-msg-card" key={sIdx}>
+							<MarkdownRenderer content={block.text} streaming={streamingTextIndex === seg.index} />
+						</div>
+					);
 				}
 				if (seg.kind === "thinking") {
 					const block = message.content[seg.index];
