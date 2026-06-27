@@ -109,6 +109,10 @@ function makeWait(speed: MockSpeed): (baseMs: number) => Promise<void> {
 	return (baseMs) => sleep(baseMs / factor);
 }
 
+/** Глобальний лічильник для унікальних toolCallId між прогонами (щоб уникнути колізій join'у при накопиченні). */
+let toolSeq = 0;
+const uniqueToolId = (base: string): string => `${base}-${(toolSeq++).toString(36)}-${Math.random().toString(36).slice(2, 5)}`;
+
 /** Блок контенту для потокового AssistantMessage. */
 interface BlockSpec {
 	type: "text" | "thinking";
@@ -179,10 +183,10 @@ async function streamAssistantMessage(emit: MockEventEmitter, blocks: BlockSpec[
 }
 
 interface ToolRunSpec {
-	callId: string;
+	callBase: string;
 	toolName: string;
 	args: Record<string, unknown>;
-	buildResult: () => ToolResultMessage;
+	buildResult: (callId: string) => ToolResultMessage;
 	wait: (baseMs: number) => Promise<void>;
 	runningMs: number;
 	isError?: boolean;
@@ -191,17 +195,18 @@ interface ToolRunSpec {
 /** Виконати tool: emit tool-call → статус running → пауза (видно що працює) → result + end. */
 async function runTool(emit: MockEventEmitter, spec: ToolRunSpec): Promise<void> {
 	const isError = spec.isError ?? false;
-	const call = toolCall(spec.callId, spec.toolName, spec.args);
+	const callId = uniqueToolId(spec.callBase);
+	const call = toolCall(callId, spec.toolName, spec.args);
 	emit({ type: "message_start", message: assistantMessage([call], "toolUse") });
 	emit({ type: "message_end", message: assistantMessage([call], "toolUse") });
 
-	emit({ type: "tool_execution_start", toolCallId: spec.callId, toolName: spec.toolName, args: spec.args });
+	emit({ type: "tool_execution_start", toolCallId: callId, toolName: spec.toolName, args: spec.args });
 	await spec.wait(spec.runningMs);
 
-	const result = spec.buildResult();
+	const result = spec.buildResult(callId);
 	emit({ type: "message_start", message: result });
 	emit({ type: "message_end", message: result });
-	emit({ type: "tool_execution_end", toolCallId: spec.callId, toolName: spec.toolName, result, isError });
+	emit({ type: "tool_execution_end", toolCallId: callId, toolName: spec.toolName, result, isError });
 }
 
 /**
@@ -250,11 +255,11 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 
 	// === Раунд інструментів 1: ls + read ===
 	await runTool(emit, {
-		callId: "call_ls_1",
+		callBase: "ls",
 		toolName: "ls",
 		args: { path: "." },
-		buildResult: () =>
-			toolResultMessage("call_ls_1", "ls", [
+		buildResult: (id) =>
+			toolResultMessage(id, "ls", [
 				textContent(
 					md(
 						"📁 packages/",
@@ -273,12 +278,12 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 	});
 	await wait(T.toolGap);
 	await runTool(emit, {
-		callId: "call_read_1",
+		callBase: "read",
 		toolName: "read",
 		args: { path: "package.json" },
-		buildResult: () =>
+		buildResult: (id) =>
 			toolResultMessage(
-				"call_read_1",
+				id,
 				"read",
 				[
 					textContent(
@@ -324,12 +329,12 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 
 	// === Раунд інструментів 2: grep + find + read ===
 	await runTool(emit, {
-		callId: "call_grep_1",
+		callBase: "grep",
 		toolName: "grep",
 		args: { pattern: "AgentMessage", path: "packages/agent/src", glob: "*.ts" },
-		buildResult: () =>
+		buildResult: (id) =>
 			toolResultMessage(
-				"call_grep_1",
+				id,
 				"grep",
 				[
 					textContent(
@@ -348,12 +353,12 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 	});
 	await wait(T.toolGap);
 	await runTool(emit, {
-		callId: "call_find_1",
+		callBase: "find",
 		toolName: "find",
 		args: { pattern: "*.tsx", path: "web/src" },
-		buildResult: () =>
+		buildResult: (id) =>
 			toolResultMessage(
-				"call_find_1",
+				id,
 				"find",
 				[
 					textContent(
@@ -375,12 +380,12 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 	});
 	await wait(T.toolGap);
 	await runTool(emit, {
-		callId: "call_read_2",
+		callBase: "read",
 		toolName: "read",
 		args: { path: "web/src/App.tsx", offset: 86, limit: 12 },
-		buildResult: () =>
+		buildResult: (id) =>
 			toolResultMessage(
-				"call_read_2",
+				id,
 				"read",
 				[
 					textContent(
@@ -500,10 +505,10 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 		"   PluginContext,",
 	);
 	await runTool(emit, {
-		callId: "call_edit_1",
+		callBase: "edit",
 		toolName: "edit",
 		args: { path: "packages/core/src/index.ts", edits: [{ oldText: 'export { CoreHooks } from "./types";', newText: 'export { CoreHooks, PluginManifest } from "./types";' }] },
-		buildResult: () => toolResultMessage("call_edit_1", "edit", [textContent("Edited packages/core/src/index.ts")], { diff: editDiff, patch: editDiff }),
+		buildResult: (id) => toolResultMessage(id, "edit", [textContent("Edited packages/core/src/index.ts")], { diff: editDiff, patch: editDiff }),
 		wait,
 		runningMs: T.toolRunning,
 	});
@@ -518,21 +523,21 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 		"+}",
 	);
 	await runTool(emit, {
-		callId: "call_write_1",
+		callBase: "write",
 		toolName: "write",
 		args: { path: "packages/core/src/utils.ts", content: "export function uid(prefix = \"id\"): string {\n  return `${prefix}_${Date.now().toString(36)}`;\n}\n" },
-		buildResult: () => toolResultMessage("call_write_1", "write", [textContent("Created packages/core/src/utils.ts")], { diff: writeDiff, patch: writeDiff }),
+		buildResult: (id) => toolResultMessage(id, "write", [textContent("Created packages/core/src/utils.ts")], { diff: writeDiff, patch: writeDiff }),
 		wait,
 		runningMs: T.toolRunning,
 	});
 	await wait(T.toolGap);
 	await runTool(emit, {
-		callId: "call_bash_1",
+		callBase: "bash",
 		toolName: "bash",
 		args: { command: "npm run build --workspace=packages/core", timeout: 60 },
-		buildResult: () =>
+		buildResult: (id) =>
 			toolResultMessage(
-				"call_bash_1",
+				id,
 				"bash",
 				[
 					textContent(
@@ -559,12 +564,12 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 
 	// === Раунд інструментів 4: fetch (JSON) ===
 	await runTool(emit, {
-		callId: "call_fetch_1",
+		callBase: "fetch",
 		toolName: "fetch",
 		args: { url: "https://api.github.com/repos/coinloger/coudy" },
-		buildResult: () =>
+		buildResult: (id) =>
 			toolResultMessage(
-				"call_fetch_1",
+				id,
 				"fetch",
 				[
 					textContent(
@@ -588,12 +593,12 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 
 	// === Раунд інструментів 5: ПОМИЛКА (read неіснуючого файлу) ===
 	await runTool(emit, {
-		callId: "call_read_err",
+		callBase: "read",
 		toolName: "read",
 		args: { path: "packages/core/src/missing.ts" },
-		buildResult: () =>
+		buildResult: (id) =>
 			toolResultMessage(
-				"call_read_err",
+				id,
 				"read",
 				[textContent("[Error: ENOENT: no such file or directory, open 'packages/core/src/missing.ts']")],
 				{ truncation: { truncated: false } },
