@@ -17,6 +17,8 @@ import { findEnvKeys, getModels, getProviders } from "@coudycode/ai";
 import type { Api, Model } from "@coudycode/ai";
 import { PluginLoader } from "./plugin-loader.js";
 import { AuthStorage } from "./auth/auth-storage.js";
+import { ProviderDefinitions, type ApiType, type ModelDef, type ProviderDefinition } from "./auth/provider-definitions.js";
+import { fetchRemoteModels } from "./auth/fetch-models.js";
 
 export interface CoudyServerOptions {
   port?: number;
@@ -33,6 +35,8 @@ export class CoudyServer {
   private currentModel = { provider: "anthropic", modelId: "claude-sonnet-4-20250514" };
   // Сховище облікових даних провайдерів (API-ключі).
   private readonly auth = new AuthStorage();
+  // Сховище визначень кастомних провайдерів (models.json).
+  private readonly providerDefs = new ProviderDefinitions();
 
   constructor(opts: CoudyServerOptions) {
     this.hooks = new HookEngine();
@@ -149,13 +153,13 @@ export class CoudyServer {
         this.sendJson(res, 400, { error: "Потрібні поля provider та modelId" });
         return;
       }
-      const model = this.findModel(provider, modelId);
-      if (!model) {
+      const info = this.resolveModelInfo(provider, modelId);
+      if (!info) {
         this.sendJson(res, 404, { error: "Модель не знайдено в каталозі" });
         return;
       }
       this.currentModel = { provider, modelId };
-      this.sendJson(res, 200, this.modelInfo(model));
+      this.sendJson(res, 200, info);
       return;
     }
 
@@ -205,12 +209,99 @@ export class CoudyServer {
       return;
     }
 
-    // DELETE /api/providers/:id — видалити ключ провайдера.
+    // GET /api/providers/definitions — кастомні провайдери (models.json, БЕЗ ключів) + статус пресетів.
+    if (method === "GET" && pathname === "/api/providers/definitions") {
+      const custom = this.providerDefs.list().map((id) => ({
+        id,
+        custom: true,
+        definition: this.providerDefs.getPublic(id),
+      }));
+      const presets = ["openai", "anthropic"].map((id) => ({
+        id,
+        custom: false,
+        status: this.auth.getAuthStatus(id),
+      }));
+      this.sendJson(res, 200, { providers: [...custom, ...presets] });
+      return;
+    }
+
+    // POST /api/providers/preset — підключити built-in пресет (openai/anthropic) ключем.
+    if (method === "POST" && pathname === "/api/providers/preset") {
+      const body = await this.readJsonBody(req);
+      const provider = typeof body?.provider === "string" ? body.provider : null;
+      const apiKey = typeof body?.apiKey === "string" ? body.apiKey.trim() : null;
+      if (!provider || !apiKey) {
+        this.sendJson(res, 400, { error: "Потрібні поля provider та apiKey" });
+        return;
+      }
+      if (provider !== "openai" && provider !== "anthropic") {
+        this.sendJson(res, 400, { error: "Невідомий пресет" });
+        return;
+      }
+      this.auth.set(provider, { type: "api_key", key: apiKey });
+      this.sendJson(res, 200, this.auth.getAuthStatus(provider));
+      return;
+    }
+
+    // POST /api/providers/custom — зберегти кастомний провайдер у models.json.
+    if (method === "POST" && pathname === "/api/providers/custom") {
+      const body = await this.readJsonBody(req);
+      const id = typeof body?.id === "string" ? body.id.trim() : null;
+      const apiType = body?.apiType;
+      const baseUrl = typeof body?.baseUrl === "string" ? body.baseUrl.trim() : null;
+      const apiKey = typeof body?.apiKey === "string" ? body.apiKey.trim() : null;
+      if (!id || !baseUrl || !apiKey) {
+        this.sendJson(res, 400, { error: "Потрібні поля id, baseUrl, apiKey" });
+        return;
+      }
+      if (apiType !== "anthropic-messages" && apiType !== "openai-completions" && apiType !== "openai-responses") {
+        this.sendJson(res, 400, { error: "Невідомий apiType" });
+        return;
+      }
+      const label = typeof body?.label === "string" && body.label.trim() ? body.label.trim() : undefined;
+      const models = Array.isArray(body?.models) ? (body.models as ModelDef[]) : [];
+      const def: ProviderDefinition = {
+        baseUrl,
+        api: apiType as ApiType,
+        apiKey,
+        ...(label ? { name: label } : {}),
+        models,
+      };
+      this.providerDefs.set(id, def);
+      this.sendJson(res, 200, { id, definition: this.providerDefs.getPublic(id) });
+      return;
+    }
+
+    // POST /api/providers/:id/models/fetch — отримати моделі з {baseUrl}/v1/models.
+    const fetchMatch = /^\/api\/providers\/([^/]+)\/models\/fetch$/.exec(pathname);
+    if (method === "POST" && fetchMatch) {
+      const body = await this.readJsonBody(req);
+      const baseUrl = typeof body?.baseUrl === "string" ? body.baseUrl.trim() : null;
+      const apiKey = typeof body?.apiKey === "string" ? body.apiKey.trim() : null;
+      const apiType = body?.apiType;
+      if (!baseUrl || !apiKey) {
+        this.sendJson(res, 400, { error: "Потрібні поля baseUrl та apiKey" });
+        return;
+      }
+      if (apiType !== "anthropic-messages" && apiType !== "openai-completions" && apiType !== "openai-responses") {
+        this.sendJson(res, 400, { error: "Невідомий apiType" });
+        return;
+      }
+      const result = await fetchRemoteModels(baseUrl, apiKey, apiType as ApiType);
+      this.sendJson(res, result.error ? 422 : 200, result);
+      return;
+    }
+
+    // DELETE /api/providers/:id — видалити: кастомний (models.json) АБО пресет (auth).
     const delMatch = /^\/api\/providers\/([^/]+)$/.exec(pathname);
     if (method === "DELETE" && delMatch) {
       const id = decodeURIComponent(delMatch[1]);
-      this.auth.remove(id);
-      this.sendJson(res, 200, { ok: true, status: this.auth.getAuthStatus(id) });
+      if (this.providerDefs.has(id)) {
+        this.providerDefs.remove(id);
+      } else {
+        this.auth.remove(id);
+      }
+      this.sendJson(res, 200, { ok: true });
       return;
     }
 
@@ -270,20 +361,60 @@ export class CoudyServer {
     return keys && keys.length > 0 ? keys[0] : null;
   }
 
-  /** Моделі ТІЛЬКИ підключених провайдерів (auth-aware: authStorage.list() = ті, що юзер підключив ключем). */
+  /** Моделі підключених провайдерів: пресети (auth → built-in каталог) + кастомні (models.json). */
   private buildModelCatalog(): { providers: Array<{ provider: string; models: unknown[] }> } {
-    const configured = this.auth.list();
+    // (а) Пресети: auth.list() → built-in каталог @coudycode/ai.
+    const presetProviders = this.auth.list();
+    const providers: Array<{ provider: string; models: unknown[] }> = presetProviders.map(provider => ({
+      provider,
+      models: getModels(provider as never).map(m => this.modelInfo(m)),
+    }));
+    // (б) Кастомні провайдери (models.json).
+    for (const id of this.providerDefs.list()) {
+      const def = this.providerDefs.get(id);
+      if (!def) continue;
+      providers.push({ provider: id, models: def.models.map(m => this.customModelInfo(m, id, def)) });
+    }
+    return { providers };
+  }
+
+  /** Публічне представлення моделі кастомного провайдера. */
+  private customModelInfo(
+    m: ModelDef,
+    provider: string,
+    def: ProviderDefinition,
+  ): {
+    id: string;
+    label: string;
+    provider: string;
+    api: string;
+    contextWindow: number;
+    maxTokens: number;
+    reasoning: boolean;
+    input: string[];
+  } {
     return {
-      providers: configured.map(provider => ({
-        provider,
-        models: getModels(provider as never).map(m => this.modelInfo(m)),
-      })),
+      id: m.id,
+      label: m.name ?? m.id,
+      provider,
+      api: def.api,
+      contextWindow: m.contextWindow ?? 128000,
+      maxTokens: m.maxTokens ?? 16384,
+      reasoning: m.reasoning ?? false,
+      input: m.input ? [...m.input] : ["text"],
     };
   }
 
-  /** Знайти конкретну модель у каталозі. */
-  private findModel(provider: string, modelId: string): Model<Api> | undefined {
-    return getModels(provider as never).find(m => m.id === modelId);
+  /** Знайти модель та повернути її публічне представлення: built-in АБО кастомна (models.json). */
+  private resolveModelInfo(provider: string, modelId: string): ReturnType<CoudyServer["modelInfo"]> | undefined {
+    const builtIn = getModels(provider as never).find(m => m.id === modelId);
+    if (builtIn) return this.modelInfo(builtIn);
+    const def = this.providerDefs.get(provider);
+    if (def) {
+      const cm = def.models.find(m => m.id === modelId);
+      if (cm) return this.customModelInfo(cm, provider, def);
+    }
+    return undefined;
   }
 
   /** Публічне представлення моделі (id + людське імʼя + метадані). */
@@ -311,11 +442,11 @@ export class CoudyServer {
 
   /** Поточна модель як { provider, modelId, label }. */
   private getCurrentModelInfo(): { provider: string; modelId: string; label: string } {
-    const m = this.findModel(this.currentModel.provider, this.currentModel.modelId);
+    const info = this.resolveModelInfo(this.currentModel.provider, this.currentModel.modelId);
     return {
       provider: this.currentModel.provider,
       modelId: this.currentModel.modelId,
-      label: m?.name ?? this.currentModel.modelId,
+      label: info?.label ?? this.currentModel.modelId,
     };
   }
 

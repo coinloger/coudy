@@ -267,6 +267,134 @@ body {
   color: var(--pi-text-muted, #6c6c6c);
   font-size: 0.82rem;
 }
+
+/* === Діалог «Додати провайдера» === */
+.cc-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 4vh 1rem 1rem;
+}
+.cc-modal {
+  background: var(--pi-card-bg, #fff);
+  border: 1px solid var(--pi-border-muted, #b0b0b0);
+  border-radius: 0.6rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+  width: 100%;
+  max-width: 30rem;
+  max-height: 88vh;
+  overflow: auto;
+}
+.cc-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--pi-border-muted, #b0b0b0);
+}
+.cc-modal-title {
+  font-weight: 700;
+  color: var(--pi-text, #1f2328);
+}
+.cc-modal-close {
+  background: none;
+  border: none;
+  color: var(--pi-text-dim, #767676);
+  cursor: pointer;
+  padding: 0.15rem;
+  border-radius: 0.25rem;
+}
+.cc-modal-close:hover {
+  color: var(--pi-text, #1f2328);
+  background: rgba(0, 0, 0, 0.06);
+}
+.cc-modal-body {
+  padding: 1rem;
+}
+.cc-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.cc-add-branches {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.cc-add-branch {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  text-align: left;
+  background: var(--pi-page-bg, #f8f8f8);
+  border: 1px solid var(--pi-border-muted, #b0b0b0);
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.8rem;
+  cursor: pointer;
+  color: var(--pi-text, #1f2328);
+}
+.cc-add-branch:hover {
+  border-color: var(--pi-accent, #5a8080);
+}
+.cc-add-branch .text-muted {
+  font-size: 0.76rem;
+}
+.cc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-bottom: 0.6rem;
+}
+.cc-field label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--pi-text-muted, #6c6c6c);
+}
+.cc-fetched-models {
+  border: 1px solid var(--pi-border-muted, #b0b0b0);
+  border-radius: 0.4rem;
+  padding: 0.5rem 0.7rem;
+  margin: 0.5rem 0;
+  max-height: 10rem;
+  overflow: auto;
+  background: var(--pi-page-bg, #f8f8f8);
+}
+.cc-fetched-title {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--pi-text-muted, #6c6c6c);
+  margin-bottom: 0.25rem;
+}
+.cc-fetched-models ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.cc-fetched-models li {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.76rem;
+  color: var(--pi-text, #1f2328);
+}
+.cc-btn-accent {
+  background: var(--pi-accent, #5a8080);
+  border-color: var(--pi-accent, #5a8080);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.cc-btn-accent:hover {
+  filter: brightness(1.05);
+}
 .cc-provider-status {
   display: inline-flex;
   align-items: center;
