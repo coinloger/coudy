@@ -44,8 +44,76 @@
 .cc-ui-msg-card > .cc-ui-msg-body {
 	font-size: 0.9rem;
 }
-.cc-ui-msg-body p:last-child {
+/* === Markdown: vertical rhythm === */
+.cc-ui-msg-body > * {
+	margin-top: 0;
+	margin-bottom: 0.6em;
+}
+.cc-ui-msg-body > *:first-child {
+	margin-top: 0;
+}
+.cc-ui-msg-body > *:last-child {
 	margin-bottom: 0;
+}
+/* Заголовки — помірний узгоджений масштаб */
+.cc-ui-msg-body h1,
+.cc-ui-msg-body h2,
+.cc-ui-msg-body h3,
+.cc-ui-msg-body h4,
+.cc-ui-msg-body h5,
+.cc-ui-msg-body h6 {
+	margin-top: 0.8em;
+	margin-bottom: 0.35em;
+	font-weight: 700;
+	color: #1f2937;
+	line-height: 1.3;
+}
+.cc-ui-msg-body h1 {
+	font-size: 1.3rem;
+	padding-bottom: 0.2em;
+	border-bottom: 1px solid #e9ecef;
+}
+.cc-ui-msg-body h2 {
+	font-size: 1.15rem;
+	padding-bottom: 0.2em;
+	border-bottom: 1px solid #e9ecef;
+}
+.cc-ui-msg-body h3 {
+	font-size: 1.05rem;
+	font-weight: 600;
+}
+.cc-ui-msg-body h4 {
+	font-size: 0.95rem;
+	font-weight: 600;
+}
+.cc-ui-msg-body h5 {
+	font-size: 0.9rem;
+	font-weight: 600;
+}
+.cc-ui-msg-body h6 {
+	font-size: 0.85rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	color: #6c757d;
+}
+/* Списки */
+.cc-ui-msg-body ul,
+.cc-ui-msg-body ol {
+	padding-left: 1.4em;
+	margin: 0 0 0.6em;
+}
+.cc-ui-msg-body li {
+	margin-bottom: 0.2em;
+}
+.cc-ui-msg-body li:last-child {
+	margin-bottom: 0;
+}
+/* Цитата */
+.cc-ui-msg-body blockquote {
+	margin: 0 0 0.6em;
+	padding-left: 0.9em;
+	border-left: 3px solid #dee2e6;
+	color: #495057;
 }
 .cc-ui-msg-body pre {
 	background: #1e1e2e;
@@ -53,7 +121,7 @@
 	border-radius: 0.4rem;
 	padding: 0.75rem;
 	overflow-x: auto;
-	margin: 0.5rem 0;
+	margin: 0.6em 0;
 	font-size: 0.82rem;
 }
 .cc-ui-msg-body code {
@@ -69,7 +137,7 @@
 .cc-ui-msg-body table {
 	border-collapse: collapse;
 	width: 100%;
-	margin: 0.5rem 0;
+	margin: 0.6em 0;
 	font-size: 0.85rem;
 }
 .cc-ui-msg-body th,
