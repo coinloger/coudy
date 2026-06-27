@@ -35,7 +35,8 @@
 		"@coudycode/ai": "*",
 		"lucide-react": "^0.439.0",
 		"react-markdown": "^9.0.1",
-		"react-syntax-highlighter": "^15.6.1"
+		"react-syntax-highlighter": "^15.6.1",
+		"remark-gfm": "^4.0.1"
 	},
 	"keywords": [
 		"ai",

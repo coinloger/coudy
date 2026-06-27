@@ -16,6 +16,7 @@
 	background: #eef2ff;
 	align-self: flex-end;
 	max-width: 80%;
+	padding: 0.75rem 1rem;
 }
 .cc-ui-msg-assistant {
 	background: #f8f9fa;
@@ -63,6 +64,26 @@
 	padding: 0.1em 0.3em;
 	border-radius: 0.25rem;
 	font-size: 0.85em;
+}
+/* GFM-таблиці */
+.cc-ui-msg-body table {
+	border-collapse: collapse;
+	width: 100%;
+	margin: 0.5rem 0;
+	font-size: 0.85rem;
+}
+.cc-ui-msg-body th,
+.cc-ui-msg-body td {
+	border: 1px solid #dee2e6;
+	padding: 0.35rem 0.6rem;
+	text-align: left;
+}
+.cc-ui-msg-body th {
+	background: #f1f3f5;
+	font-weight: 600;
+}
+.cc-ui-msg-body tr:nth-child(even) td {
+	background: #fbfbfc;
 }
 .cc-ui-streaming-cursor {
 	display: inline-block;
@@ -148,7 +169,9 @@
 
 /*thinking block*/
 .cc-ui-thinking {
-	border-left: 3px solid #a78bfa;
+	border-left: 3px solid #ced4da;
+	background: #f1f3f5;
+	padding: 0.4rem 0.6rem;
 	padding-left: 0.75rem;
 	margin: 0.25rem 0;
 }
@@ -158,13 +181,13 @@
 	gap: 0.4rem;
 	cursor: pointer;
 	font-size: 0.78rem;
-	color: #6d28d9;
+	color: #6c757d;
 	font-weight: 600;
 	user-select: none;
 }
 .cc-ui-thinking-body {
 	font-size: 0.8rem;
-	color: #555;
+	color: #6c757d;
 	font-style: italic;
 	margin-top: 0.4rem;
 	white-space: pre-wrap;
