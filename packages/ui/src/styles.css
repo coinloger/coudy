@@ -10,7 +10,6 @@
 /*повідомлення користувача/асистента*/
 .cc-ui-msg {
 	border-radius: 0.5rem;
-	padding: 0.75rem 1rem;
 	max-width: 100%;
 }
 .cc-ui-msg-user {
@@ -20,7 +19,6 @@
 }
 .cc-ui-msg-assistant {
 	background: #f8f9fa;
-	border: 1px solid #e9ecef;
 	align-self: stretch;
 }
 .cc-ui-msg-role {
