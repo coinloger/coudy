@@ -380,7 +380,6 @@
 	color: #868e96;
 	padding: 0.05rem 0 0.05rem 1.05rem;
 }
-}
 /* вкладений ToolCall усередині групи — без зайвого відступу зверху */
 .cc-ui-tg-entry .cc-ui-tc {
 	margin: 0;
@@ -396,4 +395,23 @@
 }
 .cc-ui-tg-more:hover {
 	text-decoration: underline;
+}
+/* кнопка «показати більше (N)» на рядку групи */
+.cc-ui-tg-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.15rem;
+	flex-shrink: 0;
+	background: none;
+	border: none;
+	color: #6366f1;
+	font-size: 0.74rem;
+	cursor: pointer;
+	padding: 0.1rem 0.35rem;
+	border-radius: 0.25rem;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.cc-ui-tg-toggle:hover {
+	text-decoration: underline;
+	background: rgba(99, 102, 241, 0.1);
 }

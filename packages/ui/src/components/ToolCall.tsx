@@ -3,7 +3,6 @@ import type { ToolCall as ToolCallContent } from "@coudycode/ai";
 import { describeToolCall, toolCallPreview } from "./tool-summary.ts";
 import {
 	DEFAULT_TOOL_ICON,
-	Check,
 	ChevronDown,
 	ChevronRight,
 	CircleAlert,
@@ -23,13 +22,6 @@ export interface ToolCallProps {
 	children?: React.ReactNode;
 	/** За замовч. згорнуто. */
 	defaultOpen?: boolean;
-}
-
-function StatusIcon({ status }: { status: ToolCallStatus | undefined }): React.ReactNode {
-	if (status === "running") return <Loader2 size={13} className="cc-ui-spin" />;
-	if (status === "done") return <Check size={13} className="cc-ui-tc-done-icon" />;
-	if (status === "error") return <CircleAlert size={13} className="cc-ui-tc-error-icon" />;
-	return null;
 }
 
 /** Один інструмент: компактний summary-рядок (іконка опис статус chevron) + розкриття деталей. */
@@ -62,13 +54,16 @@ export function ToolCall({ call, status, children, defaultOpen }: ToolCallProps)
 				}}
 			>
 				<span className="cc-ui-tc-typeicon">
-					<ToolTypeIcon size={14} />
+					{status === "running" ? (
+						<Loader2 size={14} className="cc-ui-spin" />
+					) : status === "error" ? (
+						<CircleAlert size={14} className="cc-ui-tc-error-icon" />
+					) : (
+						<ToolTypeIcon size={14} />
+					)}
 				</span>
 				<span className="cc-ui-tc-desc">{description}</span>
 				{status === "running" && <span className="cc-ui-tc-running-text">…</span>}
-				<span className="cc-ui-tc-statusicon">
-					<StatusIcon status={status} />
-				</span>
 				<span className="cc-ui-tc-chevron">{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
 			</div>
 			{!open && (

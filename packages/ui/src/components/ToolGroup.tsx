@@ -2,10 +2,15 @@ import { useState } from "react";
 import type { ToolCall } from "@coudycode/ai";
 import { ToolCall as ToolCallView, type ToolCallStatus } from "./ToolCall.tsx";
 import { describeToolGroup, toolCallPreview } from "./tool-summary.ts";
-import { Check, ChevronDown, ChevronRight, CircleAlert, CornerDownRight, Loader2 } from "./tool-icons.ts";
-
-/** Поріг: якщо інструментів більше, показуємо перші N + "(+X more)". */
-const PREVIEW_LIMIT = 4;
+import {
+	ChevronDown,
+	ChevronRight,
+	CircleAlert,
+	CornerDownRight,
+	DEFAULT_TOOL_ICON,
+	Loader2,
+	TOOL_ICON,
+} from "./tool-icons.ts";
 
 export interface ToolGroupEntry {
 	call: ToolCall;
@@ -20,12 +25,11 @@ export interface ToolGroupProps {
 }
 
 /**
- * Група послідовних tool-call'ів: один collapsible блок з агрегованим summary.
- * Розкриття — список окремих інструментів з превʼю + власний expand до повного результату.
+ * Група послідовних tool-call'ів: один компактний рядок (як одиничний tool)
+ * + кнопка «показати більше (N)», що розкриває список окремих інструментів.
  */
 export function ToolGroup({ entries }: ToolGroupProps): React.ReactNode {
 	const [open, setOpen] = useState(false);
-	const [showAll, setShowAll] = useState(false);
 	const calls = entries.map((e) => e.call);
 
 	// Статус групи: якщо будь-який running → running; якщо будь-який error → error; інакше done.
@@ -42,11 +46,10 @@ export function ToolGroup({ entries }: ToolGroupProps): React.ReactNode {
 				? "cc-ui-tc-error"
 				: "cc-ui-tc-done";
 
-	const visible = showAll ? entries : entries.slice(0, PREVIEW_LIMIT);
-	const hiddenCount = entries.length - visible.length;
 	const summary = describeToolGroup(calls);
 	const last = entries[entries.length - 1];
 	const lastPreview = last ? toolCallPreview(last.call) : "";
+	const LastToolIcon = last ? (TOOL_ICON[last.call.name] ?? DEFAULT_TOOL_ICON) : DEFAULT_TOOL_ICON;
 
 	return (
 		<div className="cc-ui-tc cc-ui-tg">
@@ -68,43 +71,43 @@ export function ToolGroup({ entries }: ToolGroupProps): React.ReactNode {
 					) : groupStatus === "error" ? (
 						<CircleAlert size={14} className="cc-ui-tc-error-icon" />
 					) : (
-						<Check size={14} className="cc-ui-tc-done-icon" />
+						<LastToolIcon size={14} />
 					)}
 				</span>
 				<span className="cc-ui-tc-desc">{summary}</span>
 				{groupStatus === "running" && <span className="cc-ui-tc-running-text">…</span>}
-				<span className="cc-ui-tc-chevron">{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
+				<button
+					type="button"
+					className="cc-ui-tg-toggle"
+					onClick={(e) => {
+						e.stopPropagation();
+						setOpen((v) => !v);
+					}}
+					title={open ? "Згорнути список" : `Показати всі ${calls.length} інструментів`}
+				>
+					{open ? "згорнути" : `показати більше (${calls.length})`}
+					{open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+				</button>
 			</div>
 			{!open && lastPreview && (
 				<div className="cc-ui-tc-peek" title={lastPreview}>
+					<CornerDownRight size={13} className="cc-ui-tc-peek-mark" />
 					<span className="cc-ui-tc-peek-text">{lastPreview}</span>
 				</div>
 			)}
 			{open && (
 				<div className="cc-ui-tg-detail">
-					{visible.map((entry, i) => (
+					{entries.map((entry, i) => (
 						<div className="cc-ui-tg-entry" key={entry.call.id ?? i}>
-							<div className="cc-ui-tg-branch" title={toolCallPreview(entry.call)}>
-								<CornerDownRight size={13} className="cc-ui-tc-peek-mark" />
-								<span className="cc-ui-tc-peek-text">{toolCallPreview(entry.call)}</span>
-							</div>
-							<ToolCallView call={entry.call} status={entry.status} defaultOpen={entry.status === "error"}>
+							<ToolCallView
+								call={entry.call}
+								status={entry.status}
+								defaultOpen={entry.status === "error"}
+							>
 								{entry.result}
 							</ToolCallView>
 						</div>
 					))}
-					{hiddenCount > 0 && (
-						<button
-							type="button"
-							className="cc-ui-tg-more"
-							onClick={(e) => {
-								e.stopPropagation();
-								setShowAll(true);
-							}}
-						>
-							… (+{hiddenCount} more)
-						</button>
-					)}
 				</div>
 			)}
 		</div>
