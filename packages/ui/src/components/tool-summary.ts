@@ -29,7 +29,8 @@ export type ToolActionVerb =
 	| "Searching"
 	| "Finding"
 	| "Listing"
-	| "Fetching";
+	| "Fetching"
+	| "Analyzing";
 
 export const TOOL_VERB: Record<string, ToolActionVerb> = {
 	read: "Reading",
@@ -40,6 +41,7 @@ export const TOOL_VERB: Record<string, ToolActionVerb> = {
 	find: "Finding",
 	ls: "Listing",
 	fetch: "Fetching",
+	analyze: "Analyzing",
 };
 
 /** Коротке людяне описове слово для типу (для агрегованого summary). */
@@ -61,6 +63,8 @@ function shortLabel(name: string): { singular: string; plural: string; verb: Too
 			return { singular: "listing", plural: "listings", verb: "Listing" };
 		case "fetch":
 			return { singular: "fetch", plural: "fetches", verb: "Fetching" };
+		case "analyze":
+			return { singular: "analysis", plural: "analyses", verb: "Analyzing" };
 		default:
 			return { singular: name, plural: name, verb: TOOL_VERB[name] ?? ("Running" as ToolActionVerb) };
 	}
@@ -101,6 +105,12 @@ export function describeToolCall(call: ToolCall): string {
 			const url = strArg(a.url);
 			return url ? `Fetching ${hostname(url)}` : "Fetching";
 		}
+		case "analyze": {
+			const count = numArg(a.messageCount) ?? numArg(a.count);
+			const scope = strArg(a.scope);
+			if (count !== undefined) return `Analyzing ${count} messages${scope ? ` (${scope})` : ""}`;
+			return scope ? `Analyzing ${scope}` : "Analyzing context";
+		}
 		default:
 			return call.name;
 	}
@@ -138,6 +148,12 @@ export function toolCallPreview(call: ToolCall): string {
 		case "fetch": {
 			const url = strArg(a.url);
 			return url ?? "fetch";
+		}
+		case "analyze": {
+			const count = numArg(a.messageCount) ?? numArg(a.count);
+			const scope = strArg(a.scope);
+			if (count !== undefined) return `analyze ${count} messages`;
+			return `analyze ${scope ?? "context"}`;
 		}
 		default:
 			return call.name;
@@ -183,4 +199,10 @@ export function describeToolGroup(calls: ToolCall[]): string {
 
 function strArg(v: unknown): string | undefined {
 	return typeof v === "string" && v.length > 0 ? v : undefined;
+}
+
+function numArg(v: unknown): number | undefined {
+	if (typeof v === "number" && Number.isFinite(v)) return v;
+	if (typeof v === "string" && /^\d+$/.test(v.trim())) return Number(v);
+	return undefined;
 }

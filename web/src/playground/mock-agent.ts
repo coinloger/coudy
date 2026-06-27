@@ -653,6 +653,36 @@ export async function runMockAgent(prompt: string, emit: MockEventEmitter, optio
 	});
 	await wait(T.phaseGap);
 
+	// === Раунд інструментів 6: analyze (компактація контексту) ===
+	await runTool(emit, {
+		callBase: "analyze",
+		toolName: "analyze",
+		args: { scope: "conversation", messageCount: 12 },
+		buildResult: (id) =>
+			toolResultMessage(
+				id,
+				"analyze",
+				[
+					textContent(
+						md(
+							"Проаналізовано 12 повідомлень контексту.",
+							"Ключові моменти:",
+							"• Проект — workspace-monorepo (core/ai/agent-core/tools/ui)",
+							"• Hook-engine: actions + filters (WordPress-стайл)",
+							"• Agent runtime — @coudycode/agent-core",
+							"• Готовий до додавання фічі",
+							"",
+							"Стиснуто контекст: 12 → 4 ключових блоків (зекономлено ~2.3K токенів).",
+						),
+					),
+				],
+				{ truncation: { truncated: false } },
+			),
+		wait,
+		runningMs: T.toolRunning,
+	});
+	await wait(T.phaseGap);
+
 	// === Фінал: streaming-markdown підсумок ===
 	const summary = md(
 		"# Готово ✅",

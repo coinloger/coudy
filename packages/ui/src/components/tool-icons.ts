@@ -15,6 +15,7 @@ import {
 	Globe,
 	Loader2,
 	Search,
+	Sparkles,
 	SquarePen,
 	Terminal,
 	type LucideIcon,
@@ -30,6 +31,7 @@ export const TOOL_ICON: Record<string, LucideIcon> = {
 	find: FolderSearch,
 	ls: Folder,
 	fetch: Globe,
+	analyze: Sparkles,
 };
 
 /** Іконка за замовчуванням для невідомого типу. */
