@@ -218,7 +218,7 @@
 	}
 }
 
-/* === Claude Code-стайл tool call / group (компактні summary-рядки) === */
+/* === Claude Code-стайл tool call / group (компактні summary-рядки, Lucide-іконки) === */
 
 /* один tool-call — компактний рядок */
 .cc-ui-tc {
@@ -238,11 +238,40 @@
 .cc-ui-tc-row:hover {
 	background: rgba(99, 102, 241, 0.08);
 }
-.cc-ui-tc-icon {
-	font-size: 0.7rem;
+/* іконка типу інструменту (Lucide) */
+.cc-ui-tc-typeicon {
 	flex-shrink: 0;
-	width: 0.7rem;
-	text-align: center;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: #6c757d;
+}
+/* лічильник для групи (замість іконки) */
+.cc-ui-tc-typeicon.cc-ui-tc-multi {
+	min-width: 1.1rem;
+	height: 1.1rem;
+	border-radius: 0.3rem;
+	background: #e9ecef;
+	color: #495057;
+	font-size: 0.68rem;
+	font-weight: 700;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+/* іконка статусу (Lucide: Loader2/Check/CircleAlert) */
+.cc-ui-tc-statusicon {
+	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+}
+.cc-ui-tc-done-icon {
+	color: #0f5132;
+}
+.cc-ui-tc-error-icon {
+	color: #c92a2a;
+}
+.cc-ui-spin {
+	color: #f59f00;
+	animation: cc-ui-spin 0.7s linear infinite;
 }
 .cc-ui-tc-desc {
 	flex-grow: 1;
@@ -257,23 +286,41 @@
 .cc-ui-tc-chevron {
 	flex-shrink: 0;
 	color: #9aa0a6;
-	font-size: 0.7rem;
+	display: inline-flex;
+	align-items: center;
 }
 
-/* статуси (колір іконки) */
-.cc-ui-tc-done .cc-ui-tc-icon {
-	color: #0f5132;
+/* згорнутий peek: превʼю останнього tool-виклику (CSS border-left коннектор) */
+.cc-ui-tc-peek {
+	padding: 0.05rem 0 0.1rem 1.45rem;
+	margin-left: 0.45rem;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.76rem;
+	color: #868e96;
+	line-height: 1.45;
+	border-left: 1.5px solid #e0e4e8;
 }
-.cc-ui-tc-running .cc-ui-tc-icon {
-	color: #f59f00;
+.cc-ui-tc-peek-text {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	display: block;
 }
-.cc-ui-tc-error .cc-ui-tc-icon {
+
+/* статуси (колір іконки типу) */
+.cc-ui-tc-done .cc-ui-tc-typeicon {
+	color: #495057;
+}
+.cc-ui-tc-running .cc-ui-tc-typeicon {
+	color: #b8730d;
+}
+.cc-ui-tc-error .cc-ui-tc-typeicon {
 	color: #c92a2a;
 }
 .cc-ui-tc-error .cc-ui-tc-desc {
 	color: #c92a2a;
 }
-.cc-ui-tc-pending .cc-ui-tc-icon {
+.cc-ui-tc-pending .cc-ui-tc-typeicon {
 	color: #adb5bd;
 }
 
@@ -305,8 +352,9 @@
 /* група інструментів */
 .cc-ui-tg-detail {
 	padding: 0.25rem 0 0.25rem 0.5rem;
+	margin-left: 0.45rem;
 	margin-top: 0.1rem;
-	border-left: 2px solid #e9ecef;
+	border-left: 1.5px solid #e0e4e8;
 }
 .cc-ui-tg-entry {
 	margin: 0.15rem 0;
@@ -315,7 +363,7 @@
 	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 	font-size: 0.76rem;
 	color: #868e96;
-	padding: 0.05rem 0 0.05rem 0.6rem;
+	padding: 0.05rem 0 0.05rem 1.05rem;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;

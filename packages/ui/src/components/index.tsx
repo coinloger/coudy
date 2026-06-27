@@ -4,6 +4,7 @@ export { UserMessage, type UserMessageProps } from "./UserMessage.tsx";
 export { SystemMessage, type SystemMessageProps } from "./SystemMessage.tsx";
 export { MarkdownRenderer, type MarkdownRendererProps } from "./MarkdownRenderer.tsx";
 export { describeToolCall, describeToolGroup, toolCallPreview, basename, TOOL_VERB, type ToolActionVerb } from "./tool-summary.ts";
+export { TOOL_ICON, DEFAULT_TOOL_ICON } from "./tool-icons.ts";
 export { CodeBlock, type CodeBlockProps } from "./CodeBlock.tsx";
 export { ToolCall, type ToolCallProps, type ToolCallStatus } from "./ToolCall.tsx";
 export { ToolGroup, type ToolGroupProps, type ToolGroupEntry } from "./ToolGroup.tsx";

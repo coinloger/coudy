@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import {
 	ConversationView,
 	WorkingIndicator,
@@ -29,17 +30,41 @@ export default function Playground(): React.ReactNode {
 	const workingRef = useRef<ConversationState>(initialConversationState);
 	const lastPromptRef = useRef<string>("");
 	const scrollRef = useRef<HTMLDivElement>(null);
+	// Smart auto-scroll ("stick to bottom"): тягнемо донизу лише якщо користувач біля низу.
+	const stickRef = useRef(true);
+	const [showScrollBtn, setShowScrollBtn] = useState(false);
+	const SCROLL_THRESHOLD = 40;
 
 	// Об'єднаний стан для рендеру: історія + поточний хід + часткове повідомлення.
 	const messages: AgentMessage[] = [...committed, ...live.messages];
 	const toolStatus: Record<string, ToolCallStatus> = { ...committedStatus, ...live.toolStatus };
 	const streamingMessage = live.streamingMessage;
 
-	// Авто-скрол до низу по мірі появи контенту.
+	// Smart auto-scroll: лише якщо користувач біля низу (stick).
 	useEffect(() => {
+		if (!stickRef.current) {
+			setShowScrollBtn(true);
+			return;
+		}
+		setShowScrollBtn(false);
 		const el = scrollRef.current;
 		if (el) el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
 	}, [messages, streamingMessage]);
+
+	const handleScroll = (): void => {
+		const el = scrollRef.current;
+		if (!el) return;
+		const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - SCROLL_THRESHOLD;
+		stickRef.current = atBottom;
+		if (atBottom) setShowScrollBtn(false);
+	};
+
+	const scrollToBottom = (): void => {
+		const el = scrollRef.current;
+		if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+		stickRef.current = true;
+		setShowScrollBtn(false);
+	};
 
 	const onEvent = (event: AgentEvent): void => {
 		// Перехоплюємо agent_end: applyEvent замінив би messages на event.messages
@@ -130,7 +155,12 @@ export default function Playground(): React.ReactNode {
 				</div>
 			</div>
 
-			<div ref={scrollRef} className="flex-grow-1 overflow-auto px-4 py-3 bg-light">
+			<div
+				ref={scrollRef}
+				onScroll={handleScroll}
+				className="flex-grow-1 overflow-auto px-4 py-3 bg-light"
+				style={{ position: "relative" }}
+			>
 				<div style={{ maxWidth: 900, margin: "0 auto" }}>
 					{messages.length === 0 && !streamingMessage ? (
 						<div className="text-muted text-center mt-5">
@@ -147,6 +177,16 @@ export default function Playground(): React.ReactNode {
 						/>
 					)}
 				</div>
+				{showScrollBtn && (
+					<button
+						type="button"
+						onClick={scrollToBottom}
+						className="cc-ui-scroll-btn"
+						title="До низу"
+					>
+						<ChevronDown size={18} />
+					</button>
+				)}
 			</div>
 
 			<div className="border-top p-3 bg-white">

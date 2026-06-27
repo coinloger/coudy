@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ToolCall } from "@coudycode/ai";
 import { ToolCall as ToolCallView, type ToolCallStatus } from "./ToolCall.tsx";
 import { describeToolGroup, toolCallPreview } from "./tool-summary.ts";
+import { ChevronDown, ChevronRight, Loader2 } from "./tool-icons.ts";
 
 /** Поріг: якщо інструментів більше, показуємо перші N + "(+X more)". */
 const PREVIEW_LIMIT = 4;
@@ -19,9 +20,8 @@ export interface ToolGroupProps {
 }
 
 /**
- * Група послідовних tool-call'ів: один collapsible блок з агрегованим summary
- * ("Reading 6 files" / "Reading 3 files, editing 2 files"). Розкриття — список
- * окремих інструментів (⎿ превʼю + власний expand до повного результату).
+ * Група послідовних tool-call'ів: один collapsible блок з агрегованим summary.
+ * Розкриття — список окремих інструментів з превʼю + власний expand до повного результату.
  */
 export function ToolGroup({ entries }: ToolGroupProps): React.ReactNode {
 	const [open, setOpen] = useState(false);
@@ -45,6 +45,8 @@ export function ToolGroup({ entries }: ToolGroupProps): React.ReactNode {
 	const visible = showAll ? entries : entries.slice(0, PREVIEW_LIMIT);
 	const hiddenCount = entries.length - visible.length;
 	const summary = describeToolGroup(calls);
+	const last = entries[entries.length - 1];
+	const lastPreview = last ? toolCallPreview(last.call) : "";
 
 	return (
 		<div className="cc-ui-tc cc-ui-tg">
@@ -60,19 +62,30 @@ export function ToolGroup({ entries }: ToolGroupProps): React.ReactNode {
 					}
 				}}
 			>
-				<span className="cc-ui-tc-icon">⏺</span>
+				<span className="cc-ui-tc-typeicon cc-ui-tc-multi">
+					{calls.length}
+				</span>
 				<span className="cc-ui-tc-desc">{summary}</span>
-				{groupStatus === "running" && <span className="cc-ui-tc-running-text">…</span>}
-				<span className="cc-ui-tc-chevron">{open ? "▾" : "▸"}</span>
+				{groupStatus === "running" && (
+					<span className="cc-ui-tc-statusicon">
+						<Loader2 size={13} className="cc-ui-spin" />
+					</span>
+				)}
+				<span className="cc-ui-tc-chevron">{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
 			</div>
+			{!open && lastPreview && (
+				<div className="cc-ui-tc-peek" title={lastPreview}>
+					<span className="cc-ui-tc-peek-text">{lastPreview}</span>
+				</div>
+			)}
 			{open && (
 				<div className="cc-ui-tg-detail">
 					{visible.map((entry, i) => (
 						<div className="cc-ui-tg-entry" key={entry.call.id ?? i}>
 							<div className="cc-ui-tg-branch" title={toolCallPreview(entry.call)}>
-								⎿ {toolCallPreview(entry.call)}
+								{toolCallPreview(entry.call)}
 							</div>
-							<ToolCallView call={entry.call} status={entry.status}>
+							<ToolCallView call={entry.call} status={entry.status} defaultOpen={entry.status === "error"}>
 								{entry.result}
 							</ToolCallView>
 						</div>

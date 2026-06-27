@@ -11,3 +11,26 @@ body {
 .coudy-sidebar {
   overflow-y: auto;
 }
+
+/* кнопка "до низу" в плейграунді */
+.cc-ui-scroll-btn {
+  position: sticky;
+  bottom: 0.75rem;
+  margin-left: auto;
+  margin-right: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 50%;
+  border: 1px solid #dee2e6;
+  background: #fff;
+  color: #495057;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  z-index: 5;
+}
+.cc-ui-scroll-btn:hover {
+  background: #f1f3f5;
+}
