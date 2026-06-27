@@ -85,7 +85,8 @@ export function describeToolCall(call: ToolCall): string {
 		}
 		case "bash": {
 			const cmd = strArg(a.command);
-			return cmd ? cmd.replace(/^\$\s*/, "").trim() || cmd : "Running command";
+			const clean = cmd ? cmd.replace(/^\$\s*/, "").trim() : "";
+			return clean ? `Running ${clean}` : "Running command";
 		}
 		case "grep": {
 			const pattern = strArg(a.pattern);

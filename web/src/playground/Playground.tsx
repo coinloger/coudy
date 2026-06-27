@@ -34,6 +34,8 @@ export default function Playground(): React.ReactNode {
 	const abortRef = useRef<AbortController | null>(null);
 	// Smart auto-scroll ("stick to bottom"): тягнемо донизу лише якщо користувач біля низу.
 	const stickRef = useRef(true);
+	const lastScrollTopRef = useRef(0);
+	const programmaticScrollRef = useRef(false);
 	const [showScrollBtn, setShowScrollBtn] = useState(false);
 	const SCROLL_THRESHOLD = 40;
 
@@ -42,7 +44,8 @@ export default function Playground(): React.ReactNode {
 	const toolStatus: Record<string, ToolCallStatus> = { ...committedStatus, ...live.toolStatus };
 	const streamingMessage = live.streamingMessage;
 
-	// Smart auto-scroll: лише якщо користувач біля низу (stick).
+	// Smart auto-scroll: лише якщо користувач біля низу (stick). Програмний скрол
+	// позначаємо прапорцем, щоб onScroll не «приклеював» назад під час ручного гортання.
 	useEffect(() => {
 		if (!stickRef.current) {
 			setShowScrollBtn(true);
@@ -50,15 +53,30 @@ export default function Playground(): React.ReactNode {
 		}
 		setShowScrollBtn(false);
 		const el = scrollRef.current;
-		if (el) el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
+		if (el) {
+			programmaticScrollRef.current = true;
+			el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
+		}
 	}, [messages, streamingMessage]);
 
 	const handleScroll = (): void => {
 		const el = scrollRef.current;
 		if (!el) return;
-		const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - SCROLL_THRESHOLD;
-		stickRef.current = atBottom;
-		if (atBottom) setShowScrollBtn(false);
+		const top = el.scrollTop;
+		const programmatic = programmaticScrollRef.current;
+		programmaticScrollRef.current = false;
+		// Ручний скрол вгору → негайно відліплюємо (вільний скрол).
+		if (!programmatic && top < lastScrollTopRef.current - 1) {
+			stickRef.current = false;
+		}
+		lastScrollTopRef.current = top;
+		// Програмний авто-скрол не впливає на sticky.
+		if (programmatic) return;
+		const atBottom = top + el.clientHeight >= el.scrollHeight - SCROLL_THRESHOLD;
+		if (atBottom) {
+			stickRef.current = true;
+			setShowScrollBtn(false);
+		}
 	};
 
 	// Auto-grow текстового поля за висотою (max ~160px), далі — внутрішній скрол.
@@ -70,9 +88,10 @@ export default function Playground(): React.ReactNode {
 	}, [input]);
 
 	const scrollToBottom = (): void => {
+		stickRef.current = true;
+		programmaticScrollRef.current = true;
 		const el = scrollRef.current;
 		if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-		stickRef.current = true;
 		setShowScrollBtn(false);
 	};
 
