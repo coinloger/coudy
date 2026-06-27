@@ -220,8 +220,8 @@ export default function Playground(): React.ReactNode {
 			<div
 				ref={scrollRef}
 				onScroll={handleScroll}
-				className="flex-grow-1 overflow-auto px-4 py-3 bg-light"
-				style={{ position: "relative" }}
+				className="flex-grow-1 overflow-auto px-4 py-3"
+				style={{ position: "relative", background: "var(--pi-page-bg)" }}
 			>
 				<div style={{ maxWidth: 900, margin: "0 auto" }}>
 					{messages.length === 0 && !streamingMessage ? (
