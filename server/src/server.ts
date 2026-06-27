@@ -270,13 +270,13 @@ export class CoudyServer {
     return keys && keys.length > 0 ? keys[0] : null;
   }
 
-  /** Каталог моделей з @coudycode/ai, згрупований за провайдером (увесь, без фільтру за ключами). */
+  /** Моделі ТІЛЬКИ підключених провайдерів (auth-aware: authStorage.list() = ті, що юзер підключив ключем). */
   private buildModelCatalog(): { providers: Array<{ provider: string; models: unknown[] }> } {
-    const providers = getProviders();
+    const configured = this.auth.list();
     return {
-      providers: providers.map(provider => ({
+      providers: configured.map(provider => ({
         provider,
-        models: getModels(provider).map(m => this.modelInfo(m)),
+        models: getModels(provider as never).map(m => this.modelInfo(m)),
       })),
     };
   }

@@ -1,187 +1,241 @@
-import { useEffect, useMemo, useState } from "react";
-import { Check, CircleAlert, Search, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, ChevronDown, ChevronRight, Search, Trash2 } from "lucide-react";
+import type { ModelEntry, ProviderGroup } from "./playground/ModelSelector";
 
-/** Запис провайдера з бекенду (GET /api/providers). */
+/** Запис провайдера з бекенду (GET /api/providers — увесь каталог + статус). */
 interface ProviderInfo {
 	id: string;
 	envVar: string | null;
 	status: { configured: boolean; source?: "stored" | "environment"; label?: string };
 }
 
-/** Маска ключа для підказки — значення НІКОЛИ не показуємо. */
-function statusHint(status: ProviderInfo["status"]): string {
-	if (status.source === "environment" && status.label) return `через env ${status.label}`;
-	if (status.configured) return "ключ збережено";
-	return "не налаштовано";
+/** Знєднати провайдера (DELETE) і повідомити батьків для рефетчу. */
+async function disconnect(id: string): Promise<boolean> {
+	const r = await fetch(`/api/providers/${encodeURIComponent(id)}`, { method: "DELETE" });
+	return r.ok;
 }
 
-/** Рядок одного провайдера: статус + форма підключення (API-ключ). */
-function ProviderRow({
-	provider,
-	onSaved,
+/** Підключити провайдера ключем (POST key). */
+async function connect(id: string, key: string): Promise<boolean> {
+	const r = await fetch(`/api/providers/${encodeURIComponent(id)}/key`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ key }),
+	});
+	return r.ok;
+}
+
+/** Карта підключеного провайдера: імʼя, ✓, кількість моделей, список (expandable), «Видалити». */
+function ConnectedProvider({
+	group,
+	removed,
 	onRemoved,
 }: {
-	provider: ProviderInfo;
-	onSaved: (id: string) => void;
+	group: ProviderGroup;
+	removed: boolean;
 	onRemoved: (id: string) => void;
 }): React.ReactNode {
-	const [key, setKey] = useState("");
+	const [open, setOpen] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-	const configured = provider.status.configured;
-
-	const save = (): void => {
-		if (!key.trim()) return;
-		setBusy(true);
-		setError(null);
-		fetch(`/api/providers/${encodeURIComponent(provider.id)}/key`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ key: key.trim() }),
-		})
-			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-			.then(() => {
-				setKey("");
-				onSaved(provider.id);
-			})
-			.catch(() => setError("Не вдалося зберегти"))
-			.finally(() => setBusy(false));
-	};
 
 	const remove = (): void => {
 		setBusy(true);
 		setError(null);
-		fetch(`/api/providers/${encodeURIComponent(provider.id)}`, { method: "DELETE" })
-			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-			.then(() => onRemoved(provider.id))
+		disconnect(group.provider)
+			.then((ok) => (ok ? onRemoved(group.provider) : setError("Не вдалося видалити")))
 			.catch(() => setError("Не вдалося видалити"))
 			.finally(() => setBusy(false));
 	};
 
 	return (
-		<div className="cc-provider-row" data-configured={configured}>
+		<div className="cc-provider-row" data-configured="true">
 			<div className="cc-provider-head">
-				<div className="cc-provider-name">{provider.id}</div>
-				<div className={`cc-provider-status cc-provider-status-${configured ? "on" : "off"}`}>
-					{configured ? <Check size={13} /> : <CircleAlert size={13} />}
-					<span>{statusHint(provider.status)}</span>
-				</div>
-			</div>
-			{provider.envVar && !configured && (
-				<div className="cc-provider-envhint">або задайте env {provider.envVar}</div>
-			)}
-			<div className="cc-provider-form">
-				<input
-					type="password"
-					className="form-control form-control-sm cc-provider-input"
-					placeholder="API-ключ"
-					value={key}
-					onChange={(e) => setKey(e.target.value)}
-					disabled={busy}
-					autoComplete="off"
-				/>
 				<button
 					type="button"
-					className="btn btn-sm cc-btn-accent"
-					onClick={save}
-					disabled={busy || !key.trim()}
+					className="cc-provider-name cc-provider-toggle"
+					onClick={() => setOpen((v) => !v)}
+					title={group.models.length > 0 ? "Показати моделі" : undefined}
 				>
-					Зберегти
+					{open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+					{group.provider}
 				</button>
-				{configured && (
+				<div className="cc-provider-meta">
+					<span className="cc-provider-status cc-provider-status-on">
+						<Check size={13} /> <span>{group.models.length} моделей</span>
+					</span>
 					<button
 						type="button"
 						className="btn btn-sm btn-outline-danger"
 						onClick={remove}
 						disabled={busy}
-						title="Видалити ключ"
+						title="Відʼєднати"
 					>
 						<Trash2 size={14} />
 					</button>
-				)}
+				</div>
 			</div>
+			{open && group.models.length > 0 && (
+				<ul className="cc-provider-models">
+					{group.models.map((m: ModelEntry) => (
+						<li key={m.id} title={m.id}>
+							{m.label}
+							{m.reasoning && <span className="cc-provider-model-tag">reasoning</span>}
+						</li>
+					))}
+				</ul>
+			)}
+			{removed && <div className="cc-provider-success">Відʼєднано.</div>}
 			{error && <div className="cc-provider-error">{error}</div>}
 		</div>
 	);
 }
 
-/** Таба «Моделі» — підключення провайдерів через API-ключ. */
+/** Рядок доступного провайдера з інлайн-формою підключення. */
+function AvailableProvider({
+	provider,
+	onConnected,
+}: {
+	provider: ProviderInfo;
+	onConnected: (id: string) => void;
+}): React.ReactNode {
+	const [open, setOpen] = useState(false);
+	const [key, setKey] = useState("");
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	const submit = (): void => {
+		if (!key.trim()) return;
+		setBusy(true);
+		setError(null);
+		connect(provider.id, key.trim())
+			.then((ok) => (ok ? onConnected(provider.id) : setError("Не вдалося підключити")))
+			.catch(() => setError("Не вдалося підключити"))
+			.finally(() => setBusy(false));
+	};
+
+	return (
+		<div className="cc-provider-row cc-provider-available">
+			<div className="cc-provider-head">
+				<button
+					type="button"
+					className="cc-provider-name cc-provider-toggle"
+					onClick={() => setOpen((v) => !v)}
+				>
+					{open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+					{provider.id}
+				</button>
+				{provider.envVar && (
+					<span className="cc-provider-envhint">env {provider.envVar}</span>
+				)}
+			</div>
+			{open && (
+				<div className="cc-provider-form">
+					<input
+						type="password"
+						className="form-control form-control-sm cc-provider-input"
+						placeholder="API-ключ"
+						value={key}
+						onChange={(e) => setKey(e.target.value)}
+						disabled={busy}
+						autoComplete="off"
+					/>
+					<button
+						type="button"
+						className="btn btn-sm cc-btn-accent"
+						onClick={submit}
+						disabled={busy || !key.trim()}
+					>
+						Підключити
+					</button>
+				</div>
+			)}
+			{error && <div className="cc-provider-error">{error}</div>}
+		</div>
+	);
+}
+
+/** Таба «Моделі» — pi-флоу: підключення провайдера ключем → підтягуються його моделі. */
 export default function ModelsSettings(): React.ReactNode {
-	const [providers, setProviders] = useState<ProviderInfo[]>([]);
+	const [connected, setConnected] = useState<ProviderGroup[]>([]);
+	const [all, setAll] = useState<ProviderInfo[]>([]);
 	const [query, setQuery] = useState("");
 	const [loading, setLoading] = useState(true);
 
-	const refresh = (): void => {
-		fetch("/api/providers")
+	const refresh = useCallback(() => {
+		const pModels = fetch("/api/models")
 			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-			.then((data: { providers: ProviderInfo[] }) => setProviders(data.providers ?? []))
-			.catch(() => undefined)
-			.finally(() => setLoading(false));
-	};
+			.then((d: { providers: ProviderGroup[] }) => setConnected(d.providers ?? []))
+			.catch(() => undefined);
+		const pProviders = fetch("/api/providers")
+			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+			.then((d: { providers: ProviderInfo[] }) => setAll(d.providers ?? []))
+			.catch(() => undefined);
+		Promise.all([pModels, pProviders]).finally(() => setLoading(false));
+	}, []);
 
 	useEffect(() => {
 		refresh();
-	}, []);
+	}, [refresh]);
 
-	// Після save/delete — оновити статус лише цього провайдера (легший рефетч статусу).
-	const patchStatus = (id: string): void => {
-		fetch(`/api/providers/${encodeURIComponent(id)}/status`)
-			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-			.then((status: ProviderInfo["status"]) => {
-				setProviders((prev) =>
-					prev.map((p) => (p.id === id ? { ...p, status } : p)),
-				);
-			})
-			.catch(() => undefined);
-	};
-
-	const filtered = useMemo(() => {
+	// Доступні = не підключені ключем (source !== "stored").
+	const connectedIds = useMemo(() => new Set(connected.map((g) => g.provider)), [connected]);
+	const available = useMemo(() => {
+		const notStored = all.filter((p) => p.status.source !== "stored");
 		const q = query.trim().toLowerCase();
-		if (!q) return providers;
-		return providers.filter(
-			(p) => p.id.toLowerCase().includes(q) || (p.envVar ?? "").toLowerCase().includes(q),
-		);
-	}, [providers, query]);
-
-	const configuredCount = providers.filter((p) => p.status.configured).length;
+		const filtered = q
+			? notStored.filter(
+					(p) => p.id.toLowerCase().includes(q) || (p.envVar ?? "").toLowerCase().includes(q),
+				)
+			: notStored;
+		return filtered;
+	}, [all, connectedIds, query]);
 
 	return (
 		<div>
-			<div className="d-flex align-items-center justify-content-between gap-3 flex-wrap mb-3">
-				<div>
-					<h3 className="h5 mb-0">Провайдери моделей</h3>
-					<span className="text-muted small">
-						Налаштовано: {configuredCount} з {providers.length}
-					</span>
-				</div>
-				<div className="cc-provider-search">
+			{/* Підключені провайдери */}
+			<section className="mb-4">
+				<h3 className="h6 mb-2">Підключені</h3>
+				{loading ? (
+					<div className="text-muted small">Завантаження…</div>
+				) : connected.length === 0 ? (
+					<div className="cc-provider-empty">
+						Жодного провайдера не підключено. Додайте нижче — моделі підтягнуться автоматично.
+					</div>
+				) : (
+					<div className="cc-provider-list">
+						{connected.map((g) => (
+							<ConnectedProvider key={g.provider} group={g} removed={false} onRemoved={refresh} />
+						))}
+					</div>
+				)}
+			</section>
+
+			{/* Додати провайдера */}
+			<section>
+				<h3 className="h6 mb-2">Додати провайдера</h3>
+				<div className="cc-provider-search mb-2">
 					<Search size={14} />
 					<input
 						type="text"
 						className="form-control form-control-sm"
-						placeholder="Пошук провайдера…"
+						placeholder="Пошук серед доступних провайдерів…"
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
 					/>
 				</div>
-			</div>
-
-			{loading ? (
-				<div className="text-muted small">Завантаження…</div>
-			) : filtered.length === 0 ? (
-				<div className="text-muted small">Нічого не знайдено</div>
-			) : (
-				<div className="cc-provider-list">
-					{filtered.map((p) => (
-						<ProviderRow
-							key={p.id}
-							provider={p}
-							onSaved={patchStatus}
-							onRemoved={patchStatus}
-						/>
-					))}
-				</div>
-			)}
+				{!loading && available.length === 0 ? (
+					<div className="text-muted small">
+						{query ? "Нічого не знайдено" : "Усі провайдери вже підключені"}
+					</div>
+				) : (
+					<div className="cc-provider-list">
+						{available.map((p) => (
+							<AvailableProvider key={p.id} provider={p} onConnected={refresh} />
+						))}
+					</div>
+				)}
+			</section>
 		</div>
 	);
 }

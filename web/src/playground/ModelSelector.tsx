@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Search } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Check, ChevronDown, Plus, Search } from "lucide-react";
 
 /** Публічне представлення моделі (з GET /api/models). */
 export interface ModelEntry {
@@ -75,6 +76,20 @@ export function ModelSelector({ current, catalog, onSelect }: ModelSelectorProps
 		setOpen(false);
 		setQuery("");
 	};
+
+	// Порожньо — жодного провайдера не підключено → заклик у налаштування.
+	if (catalog.length === 0) {
+		return (
+			<Link
+				to="/settings"
+				className="cc-ui-model-trigger cc-ui-model-empty-trigger"
+				title="Підключіть провайдера в налаштуваннях"
+			>
+				<Plus size={14} />
+				<span className="cc-ui-model-label">Підключіть провайдера</span>
+			</Link>
+		);
+	}
 
 	return (
 		<div className="cc-ui-model-selector" ref={boxRef}>

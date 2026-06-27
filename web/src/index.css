@@ -55,6 +55,13 @@ body {
 .cc-ui-model-trigger:hover {
   border-color: var(--pi-border-accent, #5a8080);
 }
+.cc-ui-model-empty-trigger {
+  text-decoration: none;
+  gap: 0.35rem;
+}
+.cc-ui-model-empty-trigger:hover {
+  background: color-mix(in srgb, var(--pi-accent, #5a8080) 10%, transparent);
+}
 .cc-ui-model-label {
   white-space: nowrap;
   overflow: hidden;
@@ -201,6 +208,64 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-weight: 600;
   color: var(--pi-text, #1f2328);
+}
+.cc-provider-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+}
+.cc-provider-toggle:hover {
+  color: var(--pi-accent, #5a8080);
+}
+.cc-provider-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.cc-provider-models {
+  list-style: none;
+  padding-left: 1.4rem;
+  margin: 0.5rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.cc-provider-models li {
+  font-size: 0.78rem;
+  color: var(--pi-text-muted, #6c6c6c);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.cc-provider-model-tag {
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--pi-warning, #9a7326);
+  border: 1px solid var(--pi-border-muted, #b0b0b0);
+  border-radius: 0.2rem;
+  padding: 0 0.2rem;
+}
+.cc-provider-available {
+  background: var(--pi-page-bg, #f8f8f8);
+}
+.cc-provider-success {
+  color: var(--pi-success, #588458);
+  font-size: 0.74rem;
+  margin-top: 0.35rem;
+}
+.cc-provider-empty {
+  border: 1px dashed var(--pi-border-muted, #b0b0b0);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  text-align: center;
+  color: var(--pi-text-muted, #6c6c6c);
+  font-size: 0.82rem;
 }
 .cc-provider-status {
   display: inline-flex;
