@@ -13,9 +13,10 @@ import http, {
 import { normalize, join } from "node:path";
 import { readFile, stat } from "node:fs/promises";
 import { HookEngine } from "@coudycode/core";
-import { getModels, getProviders } from "@coudycode/ai";
+import { findEnvKeys, getModels, getProviders } from "@coudycode/ai";
 import type { Api, Model } from "@coudycode/ai";
 import { PluginLoader } from "./plugin-loader.js";
+import { AuthStorage } from "./auth/auth-storage.js";
 
 export interface CoudyServerOptions {
   port?: number;
@@ -30,6 +31,8 @@ export class CoudyServer {
   private startedAt: number | null = null;
   // Поточна модель (in-memory; дефолт — anthropic/claude-sonnet).
   private currentModel = { provider: "anthropic", modelId: "claude-sonnet-4-20250514" };
+  // Сховище облікових даних провайдерів (API-ключі).
+  private readonly auth = new AuthStorage();
 
   constructor(opts: CoudyServerOptions) {
     this.hooks = new HookEngine();
@@ -91,7 +94,7 @@ export class CoudyServer {
 
     // CORS — фронтенд (Vite) живе на іншому порті.
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
     if (method === "OPTIONS") {
       res.writeHead(204);
@@ -162,6 +165,55 @@ export class CoudyServer {
       return;
     }
 
+    // === Auth: підключення провайдерів через API-ключ (Phase 1) ===
+
+    // GET /api/providers — каталог провайдерів + статус налаштування (без секретів).
+    if (method === "GET" && pathname === "/api/providers") {
+      const providers = getProviders().map((id) => ({
+        id,
+        envVar: this.providerEnvVar(id),
+        status: this.auth.getAuthStatus(id),
+      }));
+      this.sendJson(res, 200, { providers });
+      return;
+    }
+
+    // GET /api/providers/:id/status — статус конкретного провайдера (без секретів).
+    const statusMatch = /^\/api\/providers\/([^/]+)\/status$/.exec(pathname);
+    if (method === "GET" && statusMatch) {
+      const id = decodeURIComponent(statusMatch[1]);
+      this.sendJson(res, 200, this.auth.getAuthStatus(id));
+      return;
+    }
+
+    // POST /api/providers/:id/key — зберегти api_key.
+    const keyMatch = /^\/api\/providers\/([^/]+)\/key$/.exec(pathname);
+    if (method === "POST" && keyMatch) {
+      const id = decodeURIComponent(keyMatch[1]);
+      const body = await this.readJsonBody(req);
+      const key = typeof body?.key === "string" ? body.key.trim() : null;
+      if (!key) {
+        this.sendJson(res, 400, { error: "Потрібне поле key" });
+        return;
+      }
+      const env =
+        body && typeof body.env === "object" && body.env !== null
+          ? (body.env as Record<string, string>)
+          : undefined;
+      this.auth.set(id, { type: "api_key", key, ...(env ? { env } : {}) });
+      this.sendJson(res, 200, this.auth.getAuthStatus(id));
+      return;
+    }
+
+    // DELETE /api/providers/:id — видалити ключ провайдера.
+    const delMatch = /^\/api\/providers\/([^/]+)$/.exec(pathname);
+    if (method === "DELETE" && delMatch) {
+      const id = decodeURIComponent(delMatch[1]);
+      this.auth.remove(id);
+      this.sendJson(res, 200, { ok: true, status: this.auth.getAuthStatus(id) });
+      return;
+    }
+
     this.sendJson(res, 404, { error: "Not found" });
 
     // --- Зарезервовані hook-точки бекенду (фіктивно активуються майбутнім кодом агента) ---
@@ -210,6 +262,12 @@ export class CoudyServer {
     } catch {
       this.sendJson(res, 404, { error: "File not found" });
     }
+  }
+
+  /** Канонічне імʼя env-змінної провайдера (для підказки в каталозі), якщо виявлено. */
+  private providerEnvVar(provider: string): string | null {
+    const keys = findEnvKeys(provider);
+    return keys && keys.length > 0 ? keys[0] : null;
   }
 
   /** Каталог моделей з @coudycode/ai, згрупований за провайдером (увесь, без фільтру за ключами). */

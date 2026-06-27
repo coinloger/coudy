@@ -13,6 +13,10 @@ dist/
 .env
 .env.*
 
+# Облікові дані провайдерів (API-ключі) — ~/.coudycode/auth.json
+/.coudycode/
+auth.json
+
 # macOS / OS
 .DS_Store
 
