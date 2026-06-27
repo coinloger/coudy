@@ -116,11 +116,16 @@ function scheduleCleanup(providerId: string): void {
 
 /**
  * Побудувати OAuthLoginCallbacks, що заповнюють pending-сесію.
- * onPrompt/onSelect/onManualCodeInput — заглушки (фоновий логін без TTY).
+ * onPrompt/onManualCodeInput — заглушки (фоновий логін без TTY).
+ * onSelect — метод залежно від провайдера:
+ *   openai-codex → "browser" (device-code зламаний на боці OpenAI: сторінка перевірки
+ *     відхиляє код). browser-callback слухає localhost:1455.
+ *   github-copilot → "device_code" (GitHub використовує device-code і він працює).
  */
 export function buildSessionCallbacks(providerId: string): OAuthLoginCallbacks {
 	const session = getSession(providerId);
 	const controller = session?.controller;
+	const selectMethod = providerId === "github-copilot" ? "device_code" : "browser";
 	return {
 		onAuth: (info) => {
 			const s = getSession(providerId);
@@ -138,7 +143,7 @@ export function buildSessionCallbacks(providerId: string): OAuthLoginCallbacks {
 			}
 		},
 		onPrompt: () => Promise.resolve(""),
-		onSelect: () => Promise.resolve("device_code"),
+		onSelect: () => Promise.resolve(selectMethod),
 		onManualCodeInput: undefined,
 		...(controller ? { signal: controller.signal } : {}),
 	};
