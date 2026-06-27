@@ -1,4 +1,5 @@
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 export interface CodeBlockProps {
 	code: string;
@@ -12,15 +13,17 @@ export function CodeBlock({ code, language }: CodeBlockProps): React.ReactNode {
 	return (
 		<SyntaxHighlighter
 			language={lang}
+			style={oneDark}
 			// Мінімальний інлайн-стиль, щоб не тягнути готову тему окремим імпортом.
 			customStyle={{
 				background: "#1e1e2e",
 				borderRadius: "0.4rem",
 				fontSize: "0.82rem",
 				margin: 0,
+				textShadow: "none",
 			}}
 			codeTagProps={{
-				style: { fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace' },
+				style: { fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace', textShadow: "none" },
 			}}
 		>
 			{code}

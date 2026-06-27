@@ -86,7 +86,6 @@ export function AssistantMessage({
 
 	return (
 		<div className="cc-ui-msg cc-ui-msg-assistant">
-			<div className="cc-ui-msg-role">Асистент</div>
 			{segments.map((seg, sIdx) => {
 				if (seg.kind === "text") {
 					const block = message.content[seg.index];

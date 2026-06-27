@@ -10,7 +10,6 @@ export function UserMessage({ message }: UserMessageProps): React.ReactNode {
 	const text = extractText(message.content);
 	return (
 		<div className="cc-ui-msg cc-ui-msg-user">
-			<div className="cc-ui-msg-role">Ви</div>
 			<div className="cc-ui-msg-body">
 				{text}
 				{renderImages(message.content)}

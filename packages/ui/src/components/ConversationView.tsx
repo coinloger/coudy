@@ -89,7 +89,6 @@ export function ConversationView({
 				// Кастомні агентні ролі (bashExecution, custom, branchSummary, compactionSummary) — заглушка.
 				return (
 					<div key={idx} className="cc-ui-msg cc-ui-msg-assistant">
-						<div className="cc-ui-msg-role">{role}</div>
 						<div className="cc-ui-msg-body">{renderCustom(m)}</div>
 					</div>
 				);
