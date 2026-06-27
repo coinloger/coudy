@@ -62,20 +62,17 @@ export function ToolGroup({ entries }: ToolGroupProps): React.ReactNode {
 					}
 				}}
 			>
-				<span className="cc-ui-tc-typeicon cc-ui-tc-multi">
-					{calls.length}
+				<span className="cc-ui-tc-typeicon">
+					{groupStatus === "running" ? (
+						<Loader2 size={14} className="cc-ui-spin" />
+					) : groupStatus === "error" ? (
+						<CircleAlert size={14} className="cc-ui-tc-error-icon" />
+					) : (
+						<Check size={14} className="cc-ui-tc-done-icon" />
+					)}
 				</span>
 				<span className="cc-ui-tc-desc">{summary}</span>
 				{groupStatus === "running" && <span className="cc-ui-tc-running-text">…</span>}
-				<span className="cc-ui-tc-statusicon">
-					{groupStatus === "running" ? (
-						<Loader2 size={13} className="cc-ui-spin" />
-					) : groupStatus === "error" ? (
-						<CircleAlert size={13} className="cc-ui-tc-error-icon" />
-					) : (
-						<Check size={13} className="cc-ui-tc-done-icon" />
-					)}
-				</span>
 				<span className="cc-ui-tc-chevron">{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
 			</div>
 			{!open && lastPreview && (
