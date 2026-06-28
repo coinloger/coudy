@@ -19,6 +19,15 @@ export interface PluginChatCanvasProps {
 	pluginSessionId: string;
 	/** Заголовок чату (необовʼязково; дефолт — title сесії). */
 	title?: string;
+	/**
+	 * Висота canvas (напр. 600 або "500px"). Не задано → 100% від батька (backwards-compat).
+	 * Взаємодіє з style/className (style.height пріоритетніший).
+	 */
+	height?: number | string;
+	/** Inline-стилі root-контейнера (height тут пріоритетніший за prop). */
+	style?: React.CSSProperties;
+	/** Додаткові класи root-контейнера. */
+	className?: string;
 }
 
 /** Plugin-сесія з GET /api/plugins/:plugin/sessions/:pluginSessionId (= SessionFull). */
@@ -42,8 +51,20 @@ export default function PluginChatCanvas({
 	pluginName,
 	pluginSessionId,
 	title: titleProp,
+	height,
+	style,
+	className,
 }: PluginChatCanvasProps): React.ReactNode {
 	const sessionUrl = `/api/plugins/${encodeURIComponent(pluginName)}/sessions/${encodeURIComponent(pluginSessionId)}`;
+	// Гнучкий розмір: height prop / style / className ззовні (дефолт h-100 = 100% батька).
+	const hasExplicitSize = height !== undefined || (style && (style.height !== undefined || style.maxHeight !== undefined));
+	const rootClassName = hasExplicitSize
+		? `d-flex flex-column ${className ?? ""}`.trim()
+		: `d-flex flex-column h-100 ${className ?? ""}`.trim();
+	const rootStyle: React.CSSProperties = {
+		...(height !== undefined ? { height: typeof height === "number" ? `${height}px` : height } : {}),
+		...style,
+	};
 
 	const [realSessionId, setRealSessionId] = useState<string | null>(null);
 	const [committed, setCommitted] = useState<AgentMessage[]>([]);
@@ -249,7 +270,7 @@ export default function PluginChatCanvas({
 
 	if (loading) {
 		return (
-			<div className="d-flex flex-column h-100">
+			<div className={rootClassName} style={rootStyle}>
 				<div className="flex-grow-1 d-flex align-items-center justify-content-center text-muted">
 					Завантаження сесії…
 				</div>
@@ -259,7 +280,7 @@ export default function PluginChatCanvas({
 
 	if (!realSessionId) {
 		return (
-			<div className="d-flex flex-column h-100">
+			<div className={rootClassName} style={rootStyle}>
 				<div className="flex-grow-1 d-flex align-items-center justify-content-center text-muted">
 					Сесію плагіна не знайдено. Переконайтесь, що плагін активний (declareSession).
 				</div>
@@ -268,7 +289,7 @@ export default function PluginChatCanvas({
 	}
 
 	return (
-		<div className="d-flex flex-column h-100">
+		<div className={rootClassName} style={rootStyle}>
 			<div className="border-bottom px-4 py-2 d-flex align-items-center justify-content-between gap-2">
 				<h6 className="mb-0 text-truncate">{title}</h6>
 				<div className="d-flex align-items-center gap-2">

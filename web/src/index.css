@@ -742,3 +742,17 @@ body {
 .cc-prompt-actions {
 	white-space: nowrap;
 }
+
+/* ===== Plugin layout-хелпери (Panel/Card для плагінів) ===== */
+.cc-plugin-panel.card,
+.cc-plugin-card.card {
+	background: var(--pi-card-bg, #fff);
+	border: 1px solid var(--pi-border-muted, #e2e2e2);
+	border-radius: 8px;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.cc-plugin-panel .card-body,
+.cc-plugin-card .card-body {
+	padding: 1rem 1.25rem;
+}

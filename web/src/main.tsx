@@ -6,12 +6,13 @@ import "@coudycode/ui/styles.css";
 import "./index.css";
 import App from "./App";
 import PluginChatCanvas from "./PluginChatCanvas";
+import { Panel, Card } from "./PluginLayout";
 
 // Експонуємо React + reusable-компоненти глобально: плагіни (окремі бандли, TSX через
-// esbuild) можуть рендерити UI через window.React / window.coudy.PluginChatCanvas
-// без власної копії React та без імпорту з app-бандла.
+// esbuild) можуть рендерити UI через window.React / window.coudy.* без власної копії
+// React та без імпорту з app-бандла.
 window.React = React;
-window.coudy = { React, PluginChatCanvas };
+window.coudy = { React, PluginChatCanvas, Panel, Card };
 
 const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("Елемент #root не знайдено");
