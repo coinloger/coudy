@@ -13,6 +13,7 @@ import {
 import "@coudycode/ui/styles.css";
 import { streamChat } from "./chat-stream";
 import { ModelSelector, type CurrentModel, type ProviderGroup } from "./ModelSelector";
+import { PromptSelector, type PromptTemplateEntry } from "./PromptSelector";
 import type { ChatPanel, MessageAction } from "./types";
 
 interface ChatViewProps {
@@ -46,6 +47,7 @@ interface ServerSession {
 	name: string | null;
 	model: CurrentModel | null;
 	contextUsage: { tokensUsed: number; contextWindow: number; pct: number } | null;
+	promptTemplate: { id: string; name: string } | null;
 	messages: AgentMessage[];
 }
 
@@ -72,6 +74,9 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 	// Вибір моделі (поточна + каталог підключених провайдерів).
 	const [currentModel, setCurrentModel] = useState<CurrentModel | null>(null);
 	const [catalog, setCatalog] = useState<ProviderGroup[]>([]);
+	// Вибір шаблону системного промпту (per-session).
+	const [currentPrompt, setCurrentPrompt] = useState<{ id: string; name: string } | null>(null);
+	const [promptTemplates, setPromptTemplates] = useState<PromptTemplateEntry[]>([]);
 
 	const workingRef = useRef<ConversationState>(initialConversationState);
 	const abortRef = useRef<AbortController | null>(null);
@@ -92,6 +97,7 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 			setTitle(s.name ?? "Чат");
 			setCurrentModel(s.model ?? null);
 			setContextUsage(s.contextUsage ?? null);
+			setCurrentPrompt(s.promptTemplate ?? null);
 			setLive(initialConversationState);
 			workingRef.current = initialConversationState;
 			setCompaction(null);
@@ -119,7 +125,7 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 		void loadSession();
 	}, [loadSession]);
 
-	// Завантажити каталог підключених провайдерів (модель сесії приходить через loadSession).
+	// Завантажити каталог підключених провайдерів + шаблони промптів (модель сесії через loadSession).
 	useEffect(() => {
 		let cancelled = false;
 		void fetch("/api/models")
@@ -129,10 +135,31 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 			.then((catalog) => {
 				if (!cancelled) setCatalog(catalog);
 			});
+		void fetch("/api/prompts")
+			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+			.then((data: { templates: PromptTemplateEntry[] }) => data.templates ?? [])
+			.catch(() => [] as PromptTemplateEntry[])
+			.then((templates) => {
+				if (!cancelled) setPromptTemplates(templates);
+			});
 		return () => {
 			cancelled = true;
 		};
 	}, []);
+
+	// Обрати шаблон промпту → зберегти привʼязку (POST /api/sessions/:id/prompt-template).
+	const handleSelectPrompt = (templateId: string | null): void => {
+		void fetch(`/api/sessions/${encodeURIComponent(sessionId)}/prompt-template`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ templateId }),
+		})
+			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+			.then((s: { promptTemplate?: { id: string; name: string } | null }) => {
+				setCurrentPrompt(s.promptTemplate ?? null);
+			})
+			.catch(() => undefined);
+	};
 
 	// Обрати модель → зберегти в сесію (POST /api/sessions/:id/model).
 	const handleSelectModel = (provider: string, modelId: string): void => {
@@ -327,6 +354,11 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 							onSelect={handleSelectModel}
 						/>
 					)}
+					<PromptSelector
+						current={currentPrompt}
+						templates={promptTemplates}
+						onSelect={handleSelectPrompt}
+					/>
 					<button
 						type="button"
 						className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"

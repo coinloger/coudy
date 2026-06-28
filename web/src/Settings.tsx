@@ -1,10 +1,12 @@
 import { useState } from "react";
 import ModelsSettings from "./ModelsSettings";
+import PromptTemplates from "./PromptTemplates";
 import type { SettingsTab } from "./types";
 
 /** Стандартні (ядерні) таби налаштувань. */
 const CORE_TABS: SettingsTab[] = [
 	{ id: "models", label: "Моделі", render: () => <ModelsSettings /> },
+	{ id: "prompts", label: "Шаблони промптів", render: () => <PromptTemplates /> },
 	{
 		id: "general",
 		label: "Загальне",

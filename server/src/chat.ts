@@ -20,6 +20,7 @@ import { HookEngine } from "@coudycode/core";
 import { SessionManager } from "./sessions.js";
 import { AuthStorage } from "./auth/auth-storage.js";
 import { ProviderDefinitions } from "./auth/provider-definitions.js";
+import { PromptTemplateStore, SessionPromptBinding } from "./prompts.js";
 
 const SYSTEM_PROMPT = "Ти — coudycode, корисний AI-асистент. Відповідай українською, стисло та по суті.";
 
@@ -64,19 +65,20 @@ export async function resolveModelForChat(
 	return { model: catalogModel, apiKey };
 }
 
-/** Створити AgentHarness для сесії з резолвленою моделлю + auth + tools. */
+/** Створити AgentHarness для сесії з резолвленою моделлю + auth + tools + промпт. */
 async function createHarness(
 	resolved: ResolvedModel,
 	session: Session,
 	cwd: string,
 	hooks: HookEngine,
+	basePrompt: string,
 ): Promise<AgentHarness> {
 	const env = new NodeExecutionEnv({ cwd });
 	// Базові інструменти → плагіни можуть додати свої через filter «tools:register».
 	const baseTools = createAllTools(cwd);
 	const tools = await hooks.applyFilters<AgentTool[]>("tools:register", baseTools);
-	// Системний промпт → плагіни можуть модифікувати через filter «prompt:system».
-	const systemPrompt = await hooks.applyFilters<string>("prompt:system", SYSTEM_PROMPT);
+	// Системний промпт: base = шаблон сесії ?? built-in → плагіни можуть модифікувати через «prompt:system».
+	const systemPrompt = await hooks.applyFilters<string>("prompt:system", basePrompt);
 	return new AgentHarness({
 		env,
 		session,
@@ -86,6 +88,20 @@ async function createHarness(
 		thinkingLevel: "off",
 		getApiKeyAndHeaders: async () => ({ apiKey: resolved.apiKey }),
 	});
+}
+
+/** Резолвити base-системний промпт сесії: шаблон ?? built-in SYSTEM_PROMPT. */
+function resolveBasePrompt(
+	sessionId: string,
+	promptTemplates: PromptTemplateStore,
+	promptBindings: SessionPromptBinding,
+): string {
+	const templateId = promptBindings.get(sessionId);
+	if (templateId) {
+		const template = promptTemplates.get(templateId);
+		if (template) return template.content;
+	}
+	return SYSTEM_PROMPT;
 }
 
 /** Встановити SSE-заголовки. */
@@ -118,6 +134,8 @@ export async function handleChat(
 	currentModel: { provider: string; modelId: string } | null,
 	cwd: string,
 	hooks: HookEngine,
+	promptTemplates: PromptTemplateStore,
+	promptBindings: SessionPromptBinding,
 ): Promise<void> {
 	initSSE(res);
 
@@ -149,7 +167,7 @@ export async function handleChat(
 		return;
 	}
 
-	const harness = await createHarness(resolved, opened.session, cwd, hooks);
+	const harness = await createHarness(resolved, opened.session, cwd, hooks, resolveBasePrompt(sessionId, promptTemplates, promptBindings));
 
 	// Скасування при disconnect.
 	const onClose = (): void => {
@@ -219,6 +237,8 @@ export async function handleCompact(
 	model: { provider: string; modelId: string } | null,
 	cwd: string,
 	hooks: HookEngine,
+	promptTemplates: PromptTemplateStore,
+	promptBindings: SessionPromptBinding,
 ): Promise<void> {
 	initSSE(res);
 
@@ -246,7 +266,7 @@ export async function handleCompact(
 		return;
 	}
 
-	const harness = await createHarness(resolved, opened.session, cwd, hooks);
+	const harness = await createHarness(resolved, opened.session, cwd, hooks, resolveBasePrompt(sessionId, promptTemplates, promptBindings));
 	const customInstructions =
 		typeof body.customInstructions === "string" ? body.customInstructions : undefined;
 

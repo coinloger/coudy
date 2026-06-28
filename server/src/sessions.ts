@@ -38,6 +38,8 @@ export interface SessionSummary {
 /** Повна сесія (метадані + повідомлення). */
 export interface SessionFull extends SessionSummary {
 	messages: unknown[];
+	/** Обраний системний-промпт шаблон сесії (null = built-in SYSTEM_PROMPT). */
+	promptTemplate: { id: string; name: string } | null;
 }
 
 /** Базова директорія coudycode (env COUDYCODE_DIR || ~/.coudycode). */
@@ -53,6 +55,10 @@ export interface SessionManagerOptions {
 	resolveConnectedModel?: (provider: string, modelId: string) => SessionModel | null;
 	/** Список усіх підключених моделей (для дефолту нової сесії). */
 	listConnectedModels?: () => SessionModel[];
+	/** templateId сесії (null = built-in SYSTEM_PROMPT). */
+	getPromptTemplateId?: (sessionId: string) => string | null;
+	/** Знайти шаблон за id → {id, name} (для поля promptTemplate сесії). */
+	resolvePromptTemplate?: (templateId: string) => { id: string; name: string } | null;
 }
 
 /**
@@ -64,6 +70,8 @@ export class SessionManager {
 	private readonly cwd: string;
 	private readonly resolveConnectedModel?: SessionManagerOptions["resolveConnectedModel"];
 	private readonly listConnectedModels?: SessionManagerOptions["listConnectedModels"];
+	private readonly getPromptTemplateId?: SessionManagerOptions["getPromptTemplateId"];
+	private readonly resolvePromptTemplate?: SessionManagerOptions["resolvePromptTemplate"];
 
 	constructor(options: SessionManagerOptions = {}) {
 		this.cwd = process.cwd();
@@ -71,6 +79,8 @@ export class SessionManager {
 		this.repo = new JsonlSessionRepo({ fs: env, sessionsRoot: join(getCoudyDir(), "sessions") });
 		this.resolveConnectedModel = options.resolveConnectedModel;
 		this.listConnectedModels = options.listConnectedModels;
+		this.getPromptTemplateId = options.getPromptTemplateId;
+		this.resolvePromptTemplate = options.resolvePromptTemplate;
 	}
 
 	/** Створити нову сесію (UUIDv7 id). Опц. імʼя. Встановлює початкову модель (першу підключену). */
@@ -119,7 +129,8 @@ export class SessionManager {
 		// UI-повідомлення: хронологічний порядок (compaction на своїй позиції).
 		// ctx.messages (LLM порядок, compaction згори) лишається для підрахунку токенів.
 		const displayMessages = buildDisplayMessages(entries);
-		return { ...this.summarize(meta, name ?? null, entries, ctx.model, ctx.messages), messages: displayMessages };
+		const promptTemplate = this.resolveSessionPromptTemplate(id);
+		return { ...this.summarize(meta, name ?? null, entries, ctx.model, ctx.messages), messages: displayMessages, promptTemplate };
 	}
 
 	/** Перейменувати сесію (запис session_info). */
@@ -237,5 +248,12 @@ export class SessionManager {
 		const resolved = this.resolveConnectedModel?.(provider, modelId);
 		if (resolved) return resolved;
 		return { provider, modelId, label: modelId, contextWindow: 128000 };
+	}
+
+	/** Резолвити {id, name} шаблону сесії (через привʼязку + resolvePromptTemplate). */
+	private resolveSessionPromptTemplate(sessionId: string): { id: string; name: string } | null {
+		const templateId = this.getPromptTemplateId?.(sessionId) ?? null;
+		if (!templateId) return null;
+		return this.resolvePromptTemplate?.(templateId) ?? null;
 	}
 }

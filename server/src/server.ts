@@ -31,6 +31,7 @@ import {
   waitForArmed,
 } from "./auth/oauth-sessions.js";
 import { SessionManager } from "./sessions.js";
+import { PromptTemplateStore, SessionPromptBinding } from "./prompts.js";
 import { handleChat, handleCompact } from "./chat.js";
 
 export interface CoudyServerOptions {
@@ -55,6 +56,9 @@ export class CoudyServer {
   private readonly providerDefs = new ProviderDefinitions();
   // Менеджер сесій (agent-core JSONL).
   private readonly sessions: SessionManager;
+  // Шаблони системних промптів (prompts.json) + per-session привʼязки.
+  private readonly promptTemplates = new PromptTemplateStore();
+  private readonly sessionPromptBindings = new SessionPromptBinding();
 
   constructor(opts: CoudyServerOptions) {
     this.hooks = new HookEngine();
@@ -64,6 +68,11 @@ export class CoudyServer {
     this.sessions = new SessionManager({
       resolveConnectedModel: (provider, modelId) => this.resolveConnectedModel(provider, modelId),
       listConnectedModels: () => this.listConnectedModels(),
+      getPromptTemplateId: (sessionId) => this.sessionPromptBindings.get(sessionId),
+      resolvePromptTemplate: (templateId) => {
+        const t = this.promptTemplates.get(templateId);
+        return t ? { id: t.id, name: t.name } : null;
+      },
     });
   }
 
@@ -466,6 +475,64 @@ export class CoudyServer {
 
     // === Сесії (agent-core JSONL) ===
 
+    // GET /api/prompts — список шаблонів системних промптів.
+    if (method === "GET" && pathname === "/api/prompts") {
+      this.sendJson(res, 200, { templates: this.promptTemplates.list() });
+      return;
+    }
+
+    // POST /api/prompts — створити шаблон.
+    if (method === "POST" && pathname === "/api/prompts") {
+      const body = await this.readJsonBody(req);
+      const name = typeof body?.name === "string" ? body.name : null;
+      const content = typeof body?.content === "string" ? body.content : "";
+      if (!name || !name.trim()) {
+        this.sendJson(res, 400, { error: "Потрібне поле name" });
+        return;
+      }
+      try {
+        const created = this.promptTemplates.create(name, content);
+        this.sendJson(res, 201, created);
+      } catch (e) {
+        this.sendJson(res, 400, { error: e instanceof Error ? e.message : String(e) });
+      }
+      return;
+    }
+
+    // PATCH /api/prompts/:id — оновити name/content.
+    const promptMatch = /^\/api\/prompts\/([^/]+)$/.exec(pathname);
+    if (method === "PATCH" && promptMatch) {
+      const id = decodeURIComponent(promptMatch[1]);
+      const body = await this.readJsonBody(req);
+      const patch: { name?: string; content?: string } = {};
+      if (typeof body?.name === "string") patch.name = body.name;
+      if (typeof body?.content === "string") patch.content = body.content;
+      try {
+        const updated = this.promptTemplates.update(id, patch);
+        if (!updated) {
+          this.sendJson(res, 404, { error: "Шаблон не знайдено" });
+          return;
+        }
+        this.sendJson(res, 200, updated);
+      } catch (e) {
+        this.sendJson(res, 400, { error: e instanceof Error ? e.message : String(e) });
+      }
+      return;
+    }
+
+    // DELETE /api/prompts/:id — видалити (+ cleanup привʼязок).
+    if (method === "DELETE" && promptMatch) {
+      const id = decodeURIComponent(promptMatch[1]);
+      const ok = this.promptTemplates.remove(id);
+      if (!ok) {
+        this.sendJson(res, 404, { error: "Шаблон не знайдено" });
+        return;
+      }
+      this.sessionPromptBindings.removeByTemplate(id);
+      this.sendJson(res, 200, { ok: true });
+      return;
+    }
+
     // GET /api/sessions — список усіх сесій (метадані, без messages).
     if (method === "GET" && pathname === "/api/sessions") {
       this.sendJson(res, 200, { sessions: await this.sessions.list() });
@@ -491,6 +558,8 @@ export class CoudyServer {
           : null,
         process.cwd(),
         this.hooks,
+        this.promptTemplates,
+        this.sessionPromptBindings,
       );
       return;
     }
@@ -554,6 +623,32 @@ export class CoudyServer {
       return;
     }
 
+    // POST /api/sessions/:id/prompt-template — зберегти привʼязку шаблону (null = built-in).
+    const sessionPromptMatch = /^\/api\/sessions\/([^/]+)\/prompt-template$/.exec(pathname);
+    if (method === "POST" && sessionPromptMatch) {
+      const id = decodeURIComponent(sessionPromptMatch[1]);
+      const body = await this.readJsonBody(req);
+      const templateId =
+        body && "templateId" in body
+          ? typeof body.templateId === "string"
+            ? body.templateId
+            : null
+          : null;
+      // Валідація: шаблон має існувати (якщо не null).
+      if (templateId && !this.promptTemplates.get(templateId)) {
+        this.sendJson(res, 404, { error: "Шаблон не знайдено" });
+        return;
+      }
+      this.sessionPromptBindings.set(id, templateId);
+      const session = await this.sessions.get(id);
+      if (!session) {
+        this.sendJson(res, 404, { error: "Сесію не знайдено" });
+        return;
+      }
+      this.sendJson(res, 200, session);
+      return;
+    }
+
     // POST /api/sessions/:id/compact — SSE компактація контексту.
     const sessionCompactMatch = /^\/api\/sessions\/([^/]+)\/compact$/.exec(pathname);
     if (method === "POST" && sessionCompactMatch) {
@@ -571,6 +666,8 @@ export class CoudyServer {
         sessionModel ? { provider: sessionModel.provider, modelId: sessionModel.modelId } : null,
         process.cwd(),
         this.hooks,
+        this.promptTemplates,
+        this.sessionPromptBindings,
       );
       return;
     }
@@ -583,6 +680,8 @@ export class CoudyServer {
         this.sendJson(res, 404, { error: "Сесію не знайдено" });
         return;
       }
+      // Cleanup привʼязки шаблону сесії.
+      this.sessionPromptBindings.remove(id);
       this.sendJson(res, 200, { ok: true });
       return;
     }
