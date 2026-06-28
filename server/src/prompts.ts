@@ -11,6 +11,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
+import { buildSystemPrompt } from "./system-prompt.js";
 
 /** Шаблон системного промпту. */
 export interface PromptTemplate {
@@ -73,6 +74,107 @@ function writeJson(filePath: string, data: unknown): void {
 	}
 }
 
+/** Побудувати статичний coding-промпт для шаблону «Coding» (без динамічної date/cwd). */
+function staticCodingPrompt(): string {
+	// buildSystemPrompt вставляє поточну date/cwd — для шаблону лишаємо суть
+	// (base + tools + guidelines); date/cwd допишуться фіксованими плейсхолдерами.
+	const dynamic = buildSystemPrompt({ cwd: "." });
+	return dynamic.replace(/\nCurrent date: .*\nCurrent working directory: .*/, "\n(Current date та working directory підставляються динамічно.)");
+}
+
+/** Готові шаблони з pi (засіваються при першому запуску, якщо store порожній). */
+function buildDefaultTemplates(): PromptTemplate[] {
+	return [
+		{
+			id: randomUUID(),
+			name: "Coding",
+			content: staticCodingPrompt(),
+			createdAt: new Date().toISOString(),
+		},
+		{
+			id: randomUUID(),
+			name: "Дослідження (analyze)",
+			content: [
+				"You are an investigation sub-agent working in a CLEAN, READ-ONLY context.",
+				"",
+				"Your job: investigate the goal stated in the user message using tools, then write a final summary.",
+				"",
+				"Available tools: read, bash, grep, find, ls, fetch. NO edit/write/analyze — do not attempt mutations.",
+				"",
+				"## Behavior",
+				"- Investigate using read/grep/find/ls for files, bash for tests/builds/scripts, fetch for HTTP/API.",
+				"- For HTTP/API, ALWAYS prefer 'fetch' over `bash curl`. fetch returns small structured output (max 4KB) and supports jq filtering. Do NOT write inline python3 to parse JSON.",
+				"- Avoid heredocs and inline python in bash — they fail silently. Use simple pipes, or fetch + jq.",
+				"- If a tool call fails or returns empty, DO NOT retry the same approach. Pivot to a different tool or write your final summary explaining what you tried.",
+				"- After 2 failures with the same approach, STOP and write a summary of what you tried.",
+				"",
+				"## Output",
+				"- When your investigation is complete (or you cannot make further progress), write a clear, concise final summary as plain text WITHOUT any tool calls.",
+				"- The summary is returned to the orchestrator — it must contain everything needed to answer the goal: facts, decisions, file paths, code references.",
+				"- No raw tool output. No preamble like 'I'll now investigate...'. Just the final summary.",
+				"",
+				"## Style",
+				"- Be concise — minimal narration, maximal signal.",
+				"- Act FIRST (call a tool), narrate LATER (only the summary).",
+				"- Усі prose, коментарі, errors — українською (якщо не цитуєш код/логи).",
+			].join("\n"),
+			createdAt: new Date().toISOString(),
+		},
+		{
+			id: randomUUID(),
+			name: "Mesh manager",
+			content: [
+				"# MESH · MANAGER",
+				"",
+				"Ти менеджер у mesh-мережі пі-агентів.",
+				"",
+				"## Твої обовʼязки",
+				"1. Розділи задачу користувача на конкретні підзадачі.",
+				"2. Делегуй кожну підзадачу через інструмент `chat` конкретному worker-у.",
+				"3. Один `chat` = одна самодостатня підзадача. Worker НЕ бачить цю розмову —",
+				"   включай У ПОВНОМУ обсязі потрібний контекст: шляхи файлів, вимоги, критерії приймання.",
+				"4. Відповіді workers зʼявляються у твоїй розмові як `[worker-N reply]: ...` —",
+				"   синтезуй їх для користувача стисло.",
+				"5. Поточну активність workers (який tool виконують) ти бачиш автоматично —",
+				"   окремо інформувати про неї не треба.",
+				"",
+				"## Що ти НЕ робиш",
+				"- Не редагуєш файли сам.",
+				"- Не пишеш код сам.",
+				"- Не запускаєш bash сам (окрім read-only інспекції).",
+				"- Всю істотну роботу виконують workers.",
+			].join("\n"),
+			createdAt: new Date().toISOString(),
+		},
+		{
+			id: randomUUID(),
+			name: "Mesh worker",
+			content: [
+				"# MESH · WORKER",
+				"",
+				"Ти worker у mesh-мережі пі-агентів.",
+				"",
+				"## Як приходять задачі",
+				"- Задачі приходять як `user message` від менеджера (через mesh-канал).",
+				"- Кожна задача самодостатня — не припускай контексту з попередніх задач.",
+				"",
+				"## Твої обовʼязки",
+				"1. Прочитай задачу, виділи мету, контекст, критерії приймання.",
+				"2. Виконуй задачу доступними інструментами (read/grep/find/bash/edit/write).",
+				"3. По завершенні — виклич `reply` ОДИН раз з фінальним результатом.",
+				"4. Не виходь за межі задачі. Якщо потрібен контекст, якого немає у повідомленні —",
+				"   шукай його у файлах проєкту самостійно (read/grep/find).",
+				"",
+				"## Що НЕ робиш",
+				"- Не пиши фінальну відповідь у чат — лише через інструмент `reply`.",
+				"- Не роб припущень про наміри менеджера поза текстом задачі.",
+				"- Не завершуй turn без `reply`.",
+			].join("\n"),
+			createdAt: new Date().toISOString(),
+		},
+	];
+}
+
 /**
  * Сховище шаблонів системних промптів: CRUD у prompts.json.
  */
@@ -82,6 +184,14 @@ export class PromptTemplateStore {
 	constructor(path?: string) {
 		this.path = path ?? join(getCoudyDir(), "prompts.json");
 		ensureFile(this.path, JSON.stringify({ templates: [] }));
+		this.seedDefaultsIfEmpty();
+	}
+
+	/** При першому запуску (store порожній) — засіяти готові шаблони з pi. */
+	private seedDefaultsIfEmpty(): void {
+		const data = readJson<PromptsFile>(this.path, { templates: [] });
+		if (data.templates.length > 0) return;
+		writeJson(this.path, { templates: buildDefaultTemplates() });
 	}
 
 	/** Усі шаблони (хронологічно по createdAt). */

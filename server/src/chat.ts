@@ -21,8 +21,7 @@ import { SessionManager } from "./sessions.js";
 import { AuthStorage } from "./auth/auth-storage.js";
 import { ProviderDefinitions } from "./auth/provider-definitions.js";
 import { PromptTemplateStore, SessionPromptBinding } from "./prompts.js";
-
-const SYSTEM_PROMPT = "Ти — coudycode, корисний AI-асистент. Відповідай українською, стисло та по суті.";
+import { buildSystemPrompt } from "./system-prompt.js";
 
 /** Конфіг моделі для запуску агента. */
 interface ResolvedModel {
@@ -90,18 +89,23 @@ async function createHarness(
 	});
 }
 
-/** Резолвити base-системний промпт сесії: шаблон ?? built-in SYSTEM_PROMPT. */
+/**
+ * Резолвити base-системний промпт сесії: шаблон ?? built-in (динамічний pi-промпт).
+ * Шаблон — статичний текст юзера; built-in — buildSystemPrompt({tools ?? усі 8, cwd}).
+ */
 function resolveBasePrompt(
 	sessionId: string,
 	promptTemplates: PromptTemplateStore,
 	promptBindings: SessionPromptBinding,
+	cwd: string,
+	tools?: string[],
 ): string {
 	const templateId = promptBindings.get(sessionId);
 	if (templateId) {
 		const template = promptTemplates.get(templateId);
 		if (template) return template.content;
 	}
-	return SYSTEM_PROMPT;
+	return buildSystemPrompt({ cwd, ...(tools ? { tools } : {}) });
 }
 
 /** Встановити SSE-заголовки. */
@@ -167,7 +171,7 @@ export async function handleChat(
 		return;
 	}
 
-	const harness = await createHarness(resolved, opened.session, cwd, hooks, resolveBasePrompt(sessionId, promptTemplates, promptBindings));
+	const harness = await createHarness(resolved, opened.session, cwd, hooks, resolveBasePrompt(sessionId, promptTemplates, promptBindings, cwd));
 
 	// Скасування при disconnect.
 	const onClose = (): void => {
@@ -266,7 +270,7 @@ export async function handleCompact(
 		return;
 	}
 
-	const harness = await createHarness(resolved, opened.session, cwd, hooks, resolveBasePrompt(sessionId, promptTemplates, promptBindings));
+	const harness = await createHarness(resolved, opened.session, cwd, hooks, resolveBasePrompt(sessionId, promptTemplates, promptBindings, cwd));
 	const customInstructions =
 		typeof body.customInstructions === "string" ? body.customInstructions : undefined;
 
