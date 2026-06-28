@@ -73,14 +73,38 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 
 	// Завантажити поточну модель + каталог при старті.
 	useEffect(() => {
-		void fetch("/api/model")
+		let cancelled = false;
+		const pModel = fetch("/api/model")
 			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
 			.then((m: CurrentModel) => setCurrentModel(m))
 			.catch(() => undefined);
-		void fetch("/api/models")
+		const pCatalog = fetch("/api/models")
 			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-			.then((data: { providers: ProviderGroup[] }) => setCatalog(data.providers ?? []))
-			.catch(() => undefined);
+			.then((data: { providers: ProviderGroup[] }) => data.providers ?? [])
+			.catch(() => [] as ProviderGroup[]);
+		// Якщо поточна модель не задана, але є підключені — обрати першу автоматично.
+		void Promise.all([pModel, pCatalog]).then(([model, catalog]) => {
+			if (cancelled) return;
+			setCatalog(catalog);
+			const m = model as CurrentModel | undefined;
+			const hasCurrent =
+				m &&
+				catalog.some((g) =>
+					g.provider === m.provider && g.models.some((mm) => mm.id === m.modelId),
+				);
+			if (hasCurrent) {
+				setCurrentModel(m);
+			} else if (catalog.length > 0) {
+				const first = catalog[0].models[0];
+				if (first) handleSelectModel(catalog[0].provider, first.id);
+			} else {
+				setCurrentModel(m ?? null);
+			}
+		});
+		return () => {
+			cancelled = true;
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	const handleSelectModel = (provider: string, modelId: string): void => {
@@ -129,7 +153,8 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 		setInput("");
 		setRunning(true);
 		workingRef.current = initialConversationState;
-		setLive(initialConversationState);
+		// Прелоудер одразу при відправці (до першої AgentEvent / agent_start).
+		setLive({ ...initialConversationState, working: true });
 		stickRef.current = true;
 		const controller = new AbortController();
 		abortRef.current = controller;
@@ -250,7 +275,7 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 							<Square size={14} /> Стоп
 						</button>
 					) : (
-						<button type="submit" className="btn btn-primary" disabled={!input.trim()}>
+						<button type="submit" className="btn btn-primary" disabled={!input.trim() || catalog.length === 0} title={catalog.length === 0 ? "Підключіть провайдера" : undefined}>
 							<Send size={16} />
 						</button>
 					)}

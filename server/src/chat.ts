@@ -101,17 +101,11 @@ export async function handleChat(
 		return;
 	}
 
-	// Додати user-повідомлення в сесію.
-	const userMessage: AgentMessage = {
-		role: "user",
-		content: message,
-		timestamp: Date.now(),
-	} as AgentMessage;
-	await sessions.appendMessage(sessionId, userMessage);
+	// НЕ додаємо user-повідомлення вручну — агент додасть його через prompt()
+	// і ми збережемо нові повідомлення (user + assistant) одним блоком після agent_end.
+	const startCount = existing.length;
 
-	const startCount = existing.length + 1; // +1 user
-
-	// Створити агента.
+	// Створити агента (messages = лише існуюча історія; user додається через prompt).
 	const tools = createAllTools(cwd);
 	const agent = new Agent({
 		initialState: {
@@ -119,7 +113,7 @@ export async function handleChat(
 			model: resolved.model,
 			thinkingLevel: "off",
 			tools: tools as never,
-			messages: [...existing, userMessage],
+			messages: existing,
 		},
 		getApiKey: async () => resolved.apiKey,
 	});
@@ -149,7 +143,7 @@ export async function handleChat(
 
 	let promptError: unknown = null;
 	try {
-		await agent.prompt(userMessage);
+		await agent.prompt(message);
 	} catch (err) {
 		promptError = err;
 	}

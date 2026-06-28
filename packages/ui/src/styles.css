@@ -297,7 +297,7 @@
 .cc-ui-thinking {
 	position: relative;
 	border-left: 3px solid var(--pi-border-muted);
-	background: var(--pi-info-bg);
+	background: #f1f3f5;
 	padding: 0.4rem 0.6rem;
 	padding-left: 0.75rem;
 	margin: 0.25rem 0;
@@ -381,7 +381,7 @@
 	width: min(540px, 92%);
 	max-height: 320px;
 	overflow: auto;
-	background: var(--pi-info-bg);
+	background: #f1f3f5;
 	border: 1px solid var(--pi-border-muted);
 	border-radius: 0.5rem;
 	padding: 0.5rem 0.7rem;
