@@ -113,19 +113,6 @@ export default function CommandPalette({ open, onOpenChange, commands }: Command
     el?.scrollIntoView({ block: "nearest" });
   }, [active]);
 
-  if (!open) return null;
-
-  // Виконати команду і закрити.
-  const run = (cmd: Command | undefined): void => {
-    if (!cmd) return;
-    onOpenChange(false);
-    try {
-      cmd.action();
-    } catch (e) {
-      console.error("[palette] помилка команди:", cmd.id, e);
-    }
-  };
-
   // Групування по group з глобальним індексом (для клавіатури).
   const grouped = useMemo(() => {
     let globalIdx = 0;
@@ -141,6 +128,21 @@ export default function CommandPalette({ open, onOpenChange, commands }: Command
     }
     return order.map((g) => ({ group: g, items: map.get(g)! }));
   }, [filtered]);
+
+  // Early return — ПІСЛЯ всіх хуків (Rules of Hooks: умовний return не може бути
+  // перед useMemo/useEffect, інакше React крашить «Rendered more hooks»).
+  if (!open) return null;
+
+  // Виконати команду і закрити.
+  const run = (cmd: Command | undefined): void => {
+    if (!cmd) return;
+    onOpenChange(false);
+    try {
+      cmd.action();
+    } catch (e) {
+      console.error("[palette] помилка команди:", cmd.id, e);
+    }
+  };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === "ArrowDown") {
