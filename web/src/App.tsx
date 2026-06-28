@@ -8,7 +8,6 @@ import Settings from "./Settings";
 import Playground from "./playground/Playground";
 import { useCoudyUI } from "./useCoudyUI";
 import { useSessions } from "./sessions";
-import type { ChatSession } from "./sessions";
 import type { DashboardWidget, Route as PluginRoute, SidebarItem } from "./types";
 
 const COLLAPSE_KEY = "coudycode:sidebar-collapsed";
@@ -92,14 +91,7 @@ export default function App(): React.ReactNode {
           <Route path="/playground" element={<Playground />} />
           <Route
             path="/chat/:sessionId"
-            element={
-              <ChatRoute
-                sessions={sessions.sessions}
-                activeSession={sessions.activeSession}
-                selectSession={sessions.selectSession}
-                sendMessage={sessions.sendMessage}
-              />
-            }
+            element={<ChatRoute />}
           />
           <Route
             path="/plugin/:routeId"
@@ -112,33 +104,13 @@ export default function App(): React.ReactNode {
   );
 }
 
-interface ChatRouteProps {
-  sessions: ChatSession[];
-  activeSession: ChatSession | null;
-  selectSession: (id: string) => void;
-  sendMessage: (content: string) => void;
-}
-
-/** Маршрут чату: сесія за /chat/:sessionId з URL. */
-function ChatRoute({
-  sessions,
-  activeSession,
-  selectSession,
-  sendMessage,
-}: ChatRouteProps): React.ReactNode {
+/** Маршрут чату: сесія за /chat/:sessionId з URL. ChatView самостійний (завантажує історію + SSE). */
+function ChatRoute(): React.ReactNode {
   const { sessionId } = useParams();
-  const session =
-    sessions.find((s) => s.id === sessionId) ?? null;
-
-  // Синхронізуємо активну сесію з URL (для sendMessage та стану сайдбару).
-  useEffect(() => {
-    if (sessionId && sessionId !== activeSession?.id) {
-      selectSession(sessionId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
-
-  return <ChatView session={session} onSend={sendMessage} />;
+  if (!sessionId) {
+    return <div className="p-4 text-muted">Сесію не обрано.</div>;
+  }
+  return <ChatView sessionId={sessionId} />;
 }
 
 /** Маршрут сторінки плагіна: route з ui:routes за /plugin/:routeId. */
