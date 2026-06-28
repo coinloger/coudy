@@ -33,6 +33,10 @@ export interface SessionSummary {
 	messageCount: number;
 	model: SessionModel | null;
 	contextUsage: ContextUsage | null;
+	/** Імʼя плагіна-власника (для plugin-owned сесій; null = юзерський чат). */
+	plugin?: string | null;
+	/** Plugin-scoped id сесії (для plugin-owned сесій). */
+	pluginSessionId?: string | null;
 }
 
 /** Повна сесія (метадані + повідомлення). */
@@ -59,6 +63,8 @@ export interface SessionManagerOptions {
 	getPromptTemplateId?: (sessionId: string) => string | null;
 	/** Знайти шаблон за id → {id, name} (для поля promptTemplate сесії). */
 	resolvePromptTemplate?: (templateId: string) => { id: string; name: string } | null;
+	/** Власність plugin-сесії за realSessionUuid (для полів plugin/pluginSessionId). */
+	resolveOwnership?: (sessionId: string) => { pluginName: string; pluginSessionId: string } | null;
 }
 
 /**
@@ -72,6 +78,7 @@ export class SessionManager {
 	private readonly listConnectedModels?: SessionManagerOptions["listConnectedModels"];
 	private readonly getPromptTemplateId?: SessionManagerOptions["getPromptTemplateId"];
 	private readonly resolvePromptTemplate?: SessionManagerOptions["resolvePromptTemplate"];
+	private readonly resolveOwnership?: SessionManagerOptions["resolveOwnership"];
 
 	constructor(options: SessionManagerOptions = {}) {
 		this.cwd = process.cwd();
@@ -81,6 +88,7 @@ export class SessionManager {
 		this.listConnectedModels = options.listConnectedModels;
 		this.getPromptTemplateId = options.getPromptTemplateId;
 		this.resolvePromptTemplate = options.resolvePromptTemplate;
+		this.resolveOwnership = options.resolveOwnership;
 	}
 
 	/** Створити нову сесію (UUIDv7 id). Опц. імʼя. Встановлює початкову модель (першу підключену). */
@@ -220,6 +228,7 @@ export class SessionManager {
 		const messageCount = entries.filter((e) => (e as { type?: string }).type === "message").length;
 		const last = entries[entries.length - 1] as { timestamp?: string } | undefined;
 		const sessionModel = model ? this.resolveSessionModel(model.provider, model.modelId) : null;
+		const ownership = this.resolveOwnership?.(meta.id) ?? null;
 		return {
 			id: meta.id,
 			name,
@@ -228,6 +237,8 @@ export class SessionManager {
 			messageCount,
 			model: sessionModel,
 			contextUsage: this.computeContextUsage(messages, sessionModel),
+			plugin: ownership?.pluginName ?? null,
+			pluginSessionId: ownership?.pluginSessionId ?? null,
 		};
 	}
 

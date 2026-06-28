@@ -22,6 +22,12 @@ import { AuthStorage } from "./auth/auth-storage.js";
 import { ProviderDefinitions } from "./auth/provider-definitions.js";
 import { PromptTemplateStore, SessionPromptBinding } from "./prompts.js";
 import { buildSystemPrompt } from "./system-prompt.js";
+import {
+  PluginSessionRegistryImpl,
+  PluginSessionStore,
+  resolvePluginOwnership,
+} from "./plugin-sessions.js";
+import type { PluginSessionOwnership } from "@coudycode/core";
 
 /** Конфіг моделі для запуску агента. */
 interface ResolvedModel {
@@ -90,6 +96,58 @@ async function createHarness(
 }
 
 /**
+ * Створити AgentHarness для PLUGIN-сесії: ІЗОЛЬОВАНИЙ конфіг.
+ * Тулзи/промпт плагіна беруться з конфігу; глобальні хуки (tools:register/
+ * prompt:system) НЕ застосовуються — забруднення неможливе структурно.
+ * contextProvider викликається на кожен хід → свіжий фід у systemPrompt.
+ */
+async function createPluginHarness(
+	resolved: ResolvedModel,
+	session: Session,
+	cwd: string,
+	ownership: PluginSessionOwnership,
+): Promise<AgentHarness> {
+	const env = new NodeExecutionEnv({ cwd });
+	const { config } = ownership;
+	// Базові інструменти (read/bash/…) лише якщо inheritBaseTools !== false.
+	const inheritBase = config.inheritBaseTools !== false;
+	const baseTools = inheritBase ? createAllTools(cwd) : [];
+	// Тулзи плагіна (без applyFilters — структурна ізоляція).
+	const pluginTools = (config.tools ?? []) as AgentTool[];
+	const tools = [...baseTools, ...pluginTools];
+	// Системний промпт: плагіна ?? built-in; + contextProvider-фід цього ходу.
+	const basePrompt = config.systemPrompt ?? buildSystemPrompt({ cwd });
+	const systemPrompt = await injectContextProvider(basePrompt, config);
+	return new AgentHarness({
+		env,
+		session,
+		model: resolved.model,
+		tools: tools as never,
+		systemPrompt,
+		thinkingLevel: "off",
+		getApiKeyAndHeaders: async () => ({ apiKey: resolved.apiKey }),
+	});
+}
+
+/** Впровадити contextProvider-фід у системний промпт як блок <plugin_context>. */
+async function injectContextProvider(
+	basePrompt: string,
+	config: PluginSessionOwnership["config"],
+): Promise<string> {
+	if (!config.contextProvider) return basePrompt;
+	let feed: unknown;
+	try {
+		feed = await config.contextProvider();
+	} catch (e) {
+		console.error("[plugin-sessions] contextProvider помилка:", e);
+		return basePrompt;
+	}
+	const text = typeof feed === "string" ? feed : JSON.stringify(feed, null, 2);
+	if (!text.trim()) return basePrompt;
+	return `${basePrompt}\n\n<plugin_context>\n${text}\n</plugin_context>`;
+}
+
+/**
  * Резолвити base-системний промпт сесії: шаблон ?? built-in (динамічний pi-промпт).
  * Шаблон — статичний текст юзера; built-in — buildSystemPrompt({tools ?? усі 8, cwd}).
  */
@@ -140,6 +198,8 @@ export async function handleChat(
 	hooks: HookEngine,
 	promptTemplates: PromptTemplateStore,
 	promptBindings: SessionPromptBinding,
+	pluginSessionRegistry: PluginSessionRegistryImpl,
+	pluginSessionStore: PluginSessionStore,
 ): Promise<void> {
 	initSSE(res);
 
@@ -171,7 +231,17 @@ export async function handleChat(
 		return;
 	}
 
-	const harness = await createHarness(resolved, opened.session, cwd, hooks, resolveBasePrompt(sessionId, promptTemplates, promptBindings, cwd));
+	// Структурна ізоляція: plugin-сесія має власний конфіг (без глобальних хуків).
+	const ownership = resolvePluginOwnership(sessionId, pluginSessionRegistry, pluginSessionStore);
+	const harness = ownership
+		? await createPluginHarness(resolved, opened.session, cwd, ownership)
+		: await createHarness(
+				resolved,
+				opened.session,
+				cwd,
+				hooks,
+				resolveBasePrompt(sessionId, promptTemplates, promptBindings, cwd),
+			);
 
 	// Скасування при disconnect.
 	const onClose = (): void => {
@@ -243,6 +313,8 @@ export async function handleCompact(
 	hooks: HookEngine,
 	promptTemplates: PromptTemplateStore,
 	promptBindings: SessionPromptBinding,
+	pluginSessionRegistry: PluginSessionRegistryImpl,
+	pluginSessionStore: PluginSessionStore,
 ): Promise<void> {
 	initSSE(res);
 
@@ -270,7 +342,10 @@ export async function handleCompact(
 		return;
 	}
 
-	const harness = await createHarness(resolved, opened.session, cwd, hooks, resolveBasePrompt(sessionId, promptTemplates, promptBindings, cwd));
+	const ownership = resolvePluginOwnership(sessionId, pluginSessionRegistry, pluginSessionStore);
+	const harness = ownership
+		? await createPluginHarness(resolved, opened.session, cwd, ownership)
+		: await createHarness(resolved, opened.session, cwd, hooks, resolveBasePrompt(sessionId, promptTemplates, promptBindings, cwd));
 	const customInstructions =
 		typeof body.customInstructions === "string" ? body.customInstructions : undefined;
 

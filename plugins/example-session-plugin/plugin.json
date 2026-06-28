@@ -1,0 +1,14 @@
+{
+  "name": "example-session-plugin",
+  "version": "1.0.0",
+  "title": "Example Session Plugin",
+  "description": "Демо plugin-owned ізольованої сесії: declareSession з власним тулзом «echo» + contextProvider (живий фід). Доводить структурну ізоляцію — тулзи/фід лише у цій сесії, не в глобальному чаті.",
+  "author": "coudycode",
+  "homepage": "https://github.com/coinloger/coudy",
+  "minCoreVersion": "0.1.0",
+  "permissions": ["sessions", "tools"],
+  "enabled": true,
+  "entry": {
+    "backend": "./backend/index.js"
+  }
+}

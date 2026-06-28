@@ -21,7 +21,10 @@ import {
   type PluginContext,
   type PluginManifest,
   type PluginRegistry,
+  type PluginSessionConfig,
 } from "@coudycode/core";
+import { SessionManager } from "./sessions.js";
+import type { PluginSessionRegistryImpl, PluginSessionStore } from "./plugin-sessions.js";
 
 const require = createRequire(import.meta.url);
 
@@ -195,6 +198,12 @@ export interface LoadedPlugin {
 export interface PluginLoaderOptions {
   pluginsDir: string;
   hooks: HookEngine;
+  /** Реєстр декларованих сесій плагінів (declareSession). */
+  sessionRegistry: PluginSessionRegistryImpl;
+  /** Persisted-стore pluginKey → realSessionUuid. */
+  sessionStore: PluginSessionStore;
+  /** Менеджер сесій (для створення реальних сесій при declare). */
+  sessions: SessionManager;
 }
 
 export class PluginLoader {
@@ -202,10 +211,16 @@ export class PluginLoader {
   private readonly hooks: HookEngine;
   private readonly pluginsDir: string;
   private readonly state: PluginStateStore;
+  private readonly sessionRegistry: PluginSessionRegistryImpl;
+  private readonly sessionStore: PluginSessionStore;
+  private readonly sessions: SessionManager;
 
   constructor(opts: PluginLoaderOptions) {
     this.hooks = opts.hooks;
     this.pluginsDir = opts.pluginsDir;
+    this.sessionRegistry = opts.sessionRegistry;
+    this.sessionStore = opts.sessionStore;
+    this.sessions = opts.sessions;
     this.state = new PluginStateStore(getCoudyDir());
   }
 
@@ -274,13 +289,32 @@ export class PluginLoader {
   private buildContext(plugin: LoadedPlugin): PluginContext {
     const scope = plugin.scope ?? new ScopedHookEngine(this.hooks);
     plugin.scope = scope;
+    const pluginName = plugin.manifest.name;
     return {
       hooks: scope,
-      registry: createRegistry(plugin.manifest.name),
-      utils: createUtils(`plugin:${plugin.manifest.name}`),
+      registry: createRegistry(pluginName),
+      utils: createUtils(`plugin:${pluginName}`),
       pluginPath: plugin.dir,
       manifest: plugin.manifest,
+      // Декларувати ізольовану сесію плагіна: реєстр (резидент) + persisted привʼязка
+      // (створити реальну сесію, якщо ще не зафіксовано).
+      declareSession: (config: PluginSessionConfig): void => {
+        this.sessionRegistry.declare(pluginName, config);
+        void this.ensurePluginSession(pluginName, config).catch((e) => {
+          console.error(`[plugin-sessions] не вдалося створити сесію ${pluginName}:${config.id}:`, e);
+        });
+      },
     };
+  }
+
+  /** Створити реальну сесію для plugin-сесії, якщо persisted-привʼязки ще нема. */
+  private async ensurePluginSession(pluginName: string, config: PluginSessionConfig): Promise<void> {
+    const existing = this.sessionStore.getByPluginKey(pluginName, config.id);
+    if (existing) return;
+    const title = config.title ?? `${pluginName}:${config.id}`;
+    const summary = await this.sessions.create(title);
+    this.sessionStore.set(pluginName, config.id, summary.id);
+    console.log(`[plugin-sessions] створено сесію ${pluginName}:${config.id} → ${summary.id}`);
   }
 
   /** Hot-активувати плагін: викликати activate(ctx), позначити active. */
@@ -319,6 +353,8 @@ export class PluginLoader {
       }
       // Bulk-remove усіх реєстрацій (tools:register, prompt:system, actions…).
       plugin.scope?.removeAll();
+      // Прибрати декларації plugin-сесій (конфіг зникає → ізоляція для цих сесій).
+      this.sessionRegistry.removeAll(name);
       plugin.active = false;
       plugin.effectiveEnabled = false;
       await this.hooks.doAction("plugin:deactivate", name);
@@ -373,6 +409,7 @@ export class PluginLoader {
           await plugin.module.deactivate(context);
         }
         plugin.scope?.removeAll();
+        this.sessionRegistry.removeAll(name);
         plugin.active = false;
         await this.hooks.doAction("plugin:deactivate", name);
         console.log(`[plugin-loader] "${name}" деактивовано`);

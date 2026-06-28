@@ -54,6 +54,12 @@ export interface PluginContext {
     log: (message: string, ...args: unknown[]) => void;
     error: (message: string, ...args: unknown[]) => void;
   };
+  /**
+   * Декларувати ізольовану сесію плагіна (тільки бекенд). Конфіг застосовується
+   * СТРУКТУРНО лише у цій сесії; тулзи/промпт плагіна не потрапляють у глобальний
+   * HookEngine. undefined на фронті.
+   */
+  declareSession?: (config: PluginSessionConfig) => void;
   /** Шлях до плагіна (тільки на бекенді) */
   pluginPath?: string;
   /** Інформація про плагін з маніфесту */
@@ -92,6 +98,55 @@ export interface PluginFrontendModule {
   activate?: (context: PluginContext) => void | Promise<void>;
   /** Викликається при видалені/деактивації */
   deactivate?: (context: PluginContext) => void | Promise<void>;
+}
+
+// --- Сесії, що належать плагінам (plugin-owned ізольовані сесії) ---
+
+/**
+ * Декларація сесії плагіна: конфіг застосовується СТРУКТУРНО лише у цій сесії
+ * (тулзи/промпт плагіна НЕ потрапляють у глобальний HookEngine взагалі).
+ *
+ * `tools` — масив обʼєктів інструментів (AgentTool на бекенді; тут unknown, бо core
+ * не залежить від agent-core). Бекенд типізує їх як AgentTool при застосуванні.
+ */
+export interface PluginSessionConfig {
+  /** Стабільний plugin-scoped id сесії (унікальний в межах плагіна). */
+  id: string;
+  /** Заголовок сесії для UI (необовʼязково). */
+  title?: string;
+  /** Системний промпт — ТІЛЬКИ для цієї сесії (інакше built-in). */
+  systemPrompt?: string;
+  /** Інструменти плагіна — ТІЛЬКИ для цієї сесії. */
+  tools?: unknown[];
+  /** Чи успадковувати базові інструменти (read/bash/fetch…). Дефолт: true. */
+  inheritBaseTools?: boolean;
+  /**
+   * Живий фід контексту: викликається кожен хід, результат впроваджується
+   * у systemPrompt цього ходу як <plugin_context>…</plugin_context>.
+   */
+  contextProvider?: () => Promise<unknown> | unknown;
+}
+
+/** Власність сесії плагіна (резидентний lookup за realSessionUuid). */
+export interface PluginSessionOwnership {
+  pluginName: string;
+  pluginSessionId: string;
+  config: PluginSessionConfig;
+}
+
+/**
+ * Реєстр декларованих сесій плагінів (резидентний).
+ * Ключ: "pluginName:pluginSessionId" → конфіг.
+ */
+export interface PluginSessionRegistry {
+  /** Зареєструвати/оновити декларацію сесії плагіна. */
+  declare(pluginName: string, config: PluginSessionConfig): void;
+  /** Прибрати всі декларації плагіна (при деактивації). */
+  removeAll(pluginName: string): void;
+  /** Знайти конфіг за "pluginName:pluginSessionId". */
+  get(pluginName: string, pluginSessionId: string): PluginSessionConfig | undefined;
+  /** Усі декларації (для ітерації). */
+  entries(): Array<{ pluginName: string; config: PluginSessionConfig }>;
 }
 
 // --- HTTP-роути від плагінів ---

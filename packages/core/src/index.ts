@@ -18,6 +18,9 @@ export type {
   HttpRoute,
   HttpRouteContext,
   HttpRouteHandler,
+  PluginSessionConfig,
+  PluginSessionOwnership,
+  PluginSessionRegistry,
 } from "./types";
 
 // Проста реалізація PluginRegistry

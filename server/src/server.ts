@@ -32,6 +32,7 @@ import {
 } from "./auth/oauth-sessions.js";
 import { SessionManager } from "./sessions.js";
 import { PromptTemplateStore, SessionPromptBinding } from "./prompts.js";
+import { PluginSessionRegistryImpl, PluginSessionStore } from "./plugin-sessions.js";
 import { handleChat, handleCompact } from "./chat.js";
 
 export interface CoudyServerOptions {
@@ -59,10 +60,12 @@ export class CoudyServer {
   // Шаблони системних промптів (prompts.json) + per-session привʼязки.
   private readonly promptTemplates = new PromptTemplateStore();
   private readonly sessionPromptBindings = new SessionPromptBinding();
+  // Plugin-owned ізольовані сесії (declareSession).
+  private readonly pluginSessionRegistry = new PluginSessionRegistryImpl();
+  private readonly pluginSessionStore = new PluginSessionStore();
 
   constructor(opts: CoudyServerOptions) {
     this.hooks = new HookEngine();
-    this.loader = new PluginLoader({ pluginsDir: opts.pluginsDir, hooks: this.hooks });
     this.pluginsDir = opts.pluginsDir;
     this.port = opts.port ?? 3001;
     this.sessions = new SessionManager({
@@ -73,6 +76,14 @@ export class CoudyServer {
         const t = this.promptTemplates.get(templateId);
         return t ? { id: t.id, name: t.name } : null;
       },
+      resolveOwnership: (sessionId) => this.pluginSessionStore.findBySessionId(sessionId),
+    });
+    this.loader = new PluginLoader({
+      pluginsDir: opts.pluginsDir,
+      hooks: this.hooks,
+      sessionRegistry: this.pluginSessionRegistry,
+      sessionStore: this.pluginSessionStore,
+      sessions: this.sessions,
     });
   }
 
@@ -208,6 +219,25 @@ export class CoudyServer {
         const msg = err instanceof Error ? err.message : String(err);
         this.sendJson(res, 500, { error: `Не вдалося видалити файли: ${msg}` });
       }
+      return;
+    }
+
+    // GET /api/plugins/:plugin/sessions/:pluginSessionId — plugin-owned сесія для UI.
+    const pluginSessionMatch = /^\/api\/plugins\/([^/]+)\/sessions\/([^/]+)$/.exec(pathname);
+    if (method === "GET" && pluginSessionMatch) {
+      const pluginName = decodeURIComponent(pluginSessionMatch[1]);
+      const pluginSessionId = decodeURIComponent(pluginSessionMatch[2]);
+      const realId = this.pluginSessionStore.getByPluginKey(pluginName, pluginSessionId);
+      if (!realId) {
+        this.sendJson(res, 404, { error: "Сесію плагіна не знайдено" });
+        return;
+      }
+      const session = await this.sessions.get(realId);
+      if (!session) {
+        this.sendJson(res, 404, { error: "Сесію не знайдено" });
+        return;
+      }
+      this.sendJson(res, 200, session);
       return;
     }
 
@@ -567,6 +597,8 @@ export class CoudyServer {
         this.hooks,
         this.promptTemplates,
         this.sessionPromptBindings,
+        this.pluginSessionRegistry,
+        this.pluginSessionStore,
       );
       return;
     }
@@ -675,6 +707,8 @@ export class CoudyServer {
         this.hooks,
         this.promptTemplates,
         this.sessionPromptBindings,
+        this.pluginSessionRegistry,
+        this.pluginSessionStore,
       );
       return;
     }
