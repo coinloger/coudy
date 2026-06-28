@@ -5,6 +5,8 @@ import { ToolCall } from "./ToolCall.tsx";
 import { ToolGroup, type ToolGroupEntry } from "./ToolGroup.tsx";
 import { ToolResult } from "./ToolResult.tsx";
 import type { ToolCallStatus } from "./ToolCall.tsx";
+import { MessageActionsBar } from "./message-actions.tsx";
+import type { MessageAction } from "./message-actions.tsx";
 
 /** Індекс результатів для викликів інструментів у цьому повідомленні. */
 export type ToolResultIndex = Record<
@@ -27,6 +29,8 @@ export interface AssistantMessageProps {
 	/** Які contentIndex зараз стрімляться (для курсора). */
 	streamingTextIndex?: number;
 	streamingThinkingIndex?: number;
+	/** Дії на повідомленнях (від плагінів ui:message-actions). */
+	actions?: MessageAction[];
 }
 
 /** Один контент-блок у вигляді "сегмента" рендеру. */
@@ -66,6 +70,7 @@ export function AssistantMessage({
 	toolStatus,
 	streamingTextIndex,
 	streamingThinkingIndex,
+	actions,
 }: AssistantMessageProps): React.ReactNode {
 	const segments = segmentContent(message.content);
 
@@ -122,6 +127,7 @@ export function AssistantMessage({
 					}));
 				return <ToolGroup key={sIdx} entries={entries} />;
 			})}
+			{actions && actions.length > 0 && <MessageActionsBar message={message as never} actions={actions} />}
 		</div>
 	);
 }

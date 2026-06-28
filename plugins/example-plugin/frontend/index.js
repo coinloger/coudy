@@ -67,6 +67,67 @@ export function activate(ctx) {
         ),
     },
   ]);
+
+  // --- Таба налаштувань (ui:settings-tabs) ---
+  ctx.hooks.addFilter("ui:settings-tabs", (tabs) => [
+    ...tabs,
+    {
+      id: "example-settings",
+      label: "Example",
+      render: () =>
+        R.createElement(
+          "div",
+          { className: "cc-tab-placeholder" },
+          R.createElement(
+            "p",
+            { className: "text-muted" },
+            "Цю табу додано демо-плагіном через хук ui:settings-tabs.",
+          ),
+          R.createElement(
+            "div",
+            { className: "alert alert-success" },
+            "Контент таби налаштувань від плагіна.",
+          ),
+        ),
+    },
+  ]);
+
+  // --- Панель чату (ui:chat-panel) ---
+  ctx.hooks.addFilter("ui:chat-panel", (panels) => [
+    ...panels,
+    {
+      id: "example-chat-panel",
+      label: "Plugin info",
+      render: () =>
+        R.createElement(
+          "div",
+          { className: "small text-muted mb-0" },
+          "Цю панель додано демо-плагіном через хук ui:chat-panel.",
+        ),
+    },
+  ]);
+
+  // --- Дія на повідомленнях (ui:message-actions) ---
+  ctx.hooks.addFilter("ui:message-actions", (actions) => [
+    ...actions,
+    {
+      id: "example-echo",
+      label: "Ехо",
+      onClick: (message) => {
+        // Витягуємо текст повідомлення для демо.
+        const text =
+          typeof message.content === "string"
+            ? message.content
+            : Array.isArray(message.content)
+              ? message.content
+                  .map((c) => (c && c.text) || "")
+                  .join(" ")
+              : "";
+        ctx.utils.log("message-action Ехо:", text.slice(0, 60));
+        window.alert("Ехо: " + text.slice(0, 200));
+      },
+    },
+  ]);
 }
 
 export function deactivate(ctx) {

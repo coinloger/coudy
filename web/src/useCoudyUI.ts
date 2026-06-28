@@ -2,8 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { hooks } from "./hooks";
 import { loadAndActivatePlugins } from "./plugins";
 import type {
+  ChatPanel,
   DashboardWidget,
+  MessageAction,
   Route,
+  SettingsTab,
   SidebarItem,
 } from "./types";
 
@@ -14,6 +17,9 @@ export interface CoudyUIState {
   sidebarItems: SidebarItem[];
   dashboardWidgets: DashboardWidget[];
   routes: Route[];
+  settingsTabs: SettingsTab[];
+  chatPanels: ChatPanel[];
+  messageActions: MessageAction[];
   errors: string[];
 }
 
@@ -21,6 +27,9 @@ export interface CoudyUIDefaults {
   sidebarItems: SidebarItem[];
   dashboardWidgets: DashboardWidget[];
   routes: Route[];
+  settingsTabs: SettingsTab[];
+  chatPanels: ChatPanel[];
+  messageActions: MessageAction[];
 }
 
 /**
@@ -35,6 +44,9 @@ export function useCoudyUI(defaults: CoudyUIDefaults): CoudyUIState {
     sidebarItems: defaults.sidebarItems,
     dashboardWidgets: defaults.dashboardWidgets,
     routes: defaults.routes,
+    settingsTabs: defaults.settingsTabs,
+    chatPanels: defaults.chatPanels,
+    messageActions: defaults.messageActions,
     errors: [],
   }));
 
@@ -53,11 +65,15 @@ export function useCoudyUI(defaults: CoudyUIDefaults): CoudyUIState {
         errors.push(e instanceof Error ? e.message : String(e));
       }
 
-      const [sidebarItems, dashboardWidgets, routes] = await Promise.all([
-        hooks.applyFilters<SidebarItem[]>("ui:sidebar-items", d.sidebarItems),
-        hooks.applyFilters<DashboardWidget[]>("ui:dashboard-widgets", d.dashboardWidgets),
-        hooks.applyFilters<Route[]>("ui:routes", d.routes),
-      ]);
+      const [sidebarItems, dashboardWidgets, routes, settingsTabs, chatPanels, messageActions] =
+        await Promise.all([
+          hooks.applyFilters<SidebarItem[]>("ui:sidebar-items", d.sidebarItems),
+          hooks.applyFilters<DashboardWidget[]>("ui:dashboard-widgets", d.dashboardWidgets),
+          hooks.applyFilters<Route[]>("ui:routes", d.routes),
+          hooks.applyFilters<SettingsTab[]>("ui:settings-tabs", d.settingsTabs),
+          hooks.applyFilters<ChatPanel[]>("ui:chat-panel", d.chatPanels),
+          hooks.applyFilters<MessageAction[]>("ui:message-actions", d.messageActions),
+        ]);
 
       if (!cancelled) {
         setState({
@@ -65,6 +81,9 @@ export function useCoudyUI(defaults: CoudyUIDefaults): CoudyUIState {
           sidebarItems,
           dashboardWidgets,
           routes,
+          settingsTabs,
+          chatPanels,
+          messageActions,
           errors,
         });
       }

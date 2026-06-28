@@ -47,6 +47,33 @@
 .cc-ui-msg {
 	border-radius: 0.5rem;
 	max-width: 100%;
+	position: relative;
+}
+/* Дії на повідомленнях (від плагінів ui:message-actions) — видимі при hover. */
+.cc-ui-msg-actions {
+	display: flex;
+	gap: 0.25rem;
+	margin-top: 0.35rem;
+	opacity: 0;
+	transition: opacity 0.12s ease;
+}
+.cc-ui-msg:hover > .cc-ui-msg-actions,
+.cc-ui-msg:focus-within > .cc-ui-msg-actions {
+	opacity: 1;
+}
+.cc-ui-msg-action {
+	border: 1px solid var(--pi-border-muted, #d0d0d0);
+	background: var(--pi-surface, #fff);
+	color: var(--pi-text-muted, #6c6c6c);
+	font-size: 0.7rem;
+	padding: 0.1rem 0.45rem;
+	border-radius: 0.3rem;
+	cursor: pointer;
+	transition: background 0.1s ease, color 0.1s ease;
+}
+.cc-ui-msg-action:hover {
+	background: var(--pi-accent, #5a8080);
+	color: #fff;
 }
 .cc-ui-msg-user {
 	background: var(--pi-user-msg-bg);

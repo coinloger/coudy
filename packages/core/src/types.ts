@@ -149,6 +149,9 @@ export const CoreHooks = {
   UI_SIDEBAR_ITEMS: "ui:sidebar-items", // filter — пункти сайдбару від плагінів → SidebarItem[]
   UI_DASHBOARD_WIDGETS: "ui:dashboard-widgets", // filter — картки дашборду → DashboardWidget[]
   UI_ROUTES: "ui:routes", // filter — повні сторінки → Route[]
+  UI_SETTINGS_TABS: "ui:settings-tabs", // filter — таби налаштувань → SettingsTab[]
+  UI_CHAT_PANELS: "ui:chat-panel", // filter — панелі чату → ChatPanel[]
+  UI_MESSAGE_ACTIONS: "ui:message-actions", // filter — дії на повідомлення → MessageAction[]
 } as const;
 
 export type CoreHookName = typeof CoreHooks[keyof typeof CoreHooks];

@@ -8,7 +8,14 @@ import Settings from "./Settings";
 import Playground from "./playground/Playground";
 import { useCoudyUI } from "./useCoudyUI";
 import { useSessions } from "./sessions";
-import type { DashboardWidget, Route as PluginRoute, SidebarItem } from "./types";
+import type {
+  ChatPanel,
+  DashboardWidget,
+  MessageAction,
+  Route as PluginRoute,
+  SettingsTab,
+  SidebarItem,
+} from "./types";
 
 const COLLAPSE_KEY = "coudycode:sidebar-collapsed";
 
@@ -34,6 +41,9 @@ const defaultDashboardWidgets: DashboardWidget[] = [
   },
 ];
 const defaultRoutes: PluginRoute[] = [];
+const defaultSettingsTabs: SettingsTab[] = [];
+const defaultChatPanels: ChatPanel[] = [];
+const defaultMessageActions: MessageAction[] = [];
 
 export default function App(): React.ReactNode {
   const [collapsed, setCollapsed] = useState<boolean>(() => loadCollapsed());
@@ -44,6 +54,9 @@ export default function App(): React.ReactNode {
     sidebarItems: defaultSidebarItems,
     dashboardWidgets: defaultDashboardWidgets,
     routes: defaultRoutes,
+    settingsTabs: defaultSettingsTabs,
+    chatPanels: defaultChatPanels,
+    messageActions: defaultMessageActions,
   });
 
   useEffect(() => {
@@ -87,11 +100,11 @@ export default function App(): React.ReactNode {
           <Route path="/" element={<Dashboard widgets={ui.dashboardWidgets} />} />
           <Route path="/dashboard" element={<Dashboard widgets={ui.dashboardWidgets} />} />
           <Route path="/plugins" element={<PluginManager />} />
-          <Route path="/settings" element={<Settings />} />
+          <Route path="/settings" element={<Settings tabs={ui.settingsTabs} />} />
           <Route path="/playground" element={<Playground />} />
           <Route
             path="/chat/:sessionId"
-            element={<ChatRoute />}
+            element={<ChatRoute chatPanels={ui.chatPanels} messageActions={ui.messageActions} />}
           />
           <Route
             path="/plugin/:routeId"
@@ -105,12 +118,20 @@ export default function App(): React.ReactNode {
 }
 
 /** Маршрут чату: сесія за /chat/:sessionId з URL. ChatView самостійний (завантажує історію + SSE). */
-function ChatRoute(): React.ReactNode {
+function ChatRoute({
+  chatPanels,
+  messageActions,
+}: {
+  chatPanels: ChatPanel[];
+  messageActions: MessageAction[];
+}): React.ReactNode {
   const { sessionId } = useParams();
   if (!sessionId) {
     return <div className="p-4 text-muted">Сесію не обрано.</div>;
   }
-  return <ChatView sessionId={sessionId} />;
+  return (
+    <ChatView sessionId={sessionId} chatPanels={chatPanels} messageActions={messageActions} />
+  );
 }
 
 /** Маршрут сторінки плагіна: route з ui:routes за /plugin/:routeId. */

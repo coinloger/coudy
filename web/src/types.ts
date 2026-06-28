@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { PluginManifest } from "@coudycode/core";
+import type { MessageAction } from "@coudycode/ui";
 
 // --- Контракти API бекенду ---
 
@@ -50,6 +51,26 @@ export interface Route {
   label: string;
   render: () => ReactNode;
 }
+
+/** Таба сторінки налаштувань, додана плагіном. */
+export interface SettingsTab {
+  id: string;
+  label: string;
+  /** Назва іконки Lucide (опц.). */
+  icon?: string;
+  /** Контент таби. */
+  render: () => ReactNode;
+}
+
+/** Панель у чаті, додана плагіном. */
+export interface ChatPanel {
+  id: string;
+  label?: string;
+  render: () => ReactNode;
+}
+
+/** Реекспорт типу дії повідомлення (джерело правди — @coudycode/ui). */
+export type { MessageAction };
 
 export interface LoadedFrontendPlugin {
   manifest: PluginManifest;

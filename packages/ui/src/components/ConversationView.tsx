@@ -5,6 +5,7 @@ import { UserMessage } from "./UserMessage.tsx";
 import { ToolResult } from "./ToolResult.tsx";
 import { ToolCall } from "./ToolCall.tsx";
 import type { ToolCallStatus } from "./ToolCall.tsx";
+import type { MessageAction } from "./message-actions.tsx";
 
 export interface ConversationViewProps {
 	/** Усі повідомлення розмови. */
@@ -16,6 +17,8 @@ export interface ConversationViewProps {
 	/** contentIndex тексту, що стрімиться (у streamingMessage). */
 	streamingTextIndex?: number;
 	streamingThinkingIndex?: number;
+	/** Дії на повідомленнях (від плагінів ui:message-actions). */
+	messageActions?: MessageAction[];
 }
 
 /**
@@ -29,6 +32,7 @@ export function ConversationView({
 	streamingMessage,
 	streamingTextIndex,
 	streamingThinkingIndex,
+	messageActions,
 }: ConversationViewProps): React.ReactNode {
 	const all = streamingMessage ? [...messages, streamingMessage] : messages;
 
@@ -55,7 +59,7 @@ export function ConversationView({
 				const role = (m as { role: string }).role;
 
 				if (role === "user") {
-					return <UserMessage key={idx} message={m as any} />;
+					return <UserMessage key={idx} message={m as any} actions={messageActions} />;
 				}
 				if (role === "assistant") {
 					return (
@@ -66,6 +70,7 @@ export function ConversationView({
 							toolStatus={toolStatus}
 							streamingTextIndex={isStreaming ? streamingTextIndex : undefined}
 							streamingThinkingIndex={isStreaming ? streamingThinkingIndex : undefined}
+							actions={messageActions}
 						/>
 					);
 				}

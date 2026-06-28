@@ -1,12 +1,16 @@
 import type { UserMessage as UserMessageType } from "@coudycode/ai";
 import type { ImageContent, TextContent } from "@coudycode/ai";
+import { MessageActionsBar } from "./message-actions.tsx";
+import type { MessageAction } from "./message-actions.tsx";
 
 export interface UserMessageProps {
 	message: UserMessageType;
+	/** Дії на повідомленнях (від плагінів ui:message-actions). */
+	actions?: MessageAction[];
 }
 
 /** Повідомлення користувача. */
-export function UserMessage({ message }: UserMessageProps): React.ReactNode {
+export function UserMessage({ message, actions }: UserMessageProps): React.ReactNode {
 	const text = extractText(message.content);
 	return (
 		<div className="cc-ui-msg cc-ui-msg-user">
@@ -14,6 +18,7 @@ export function UserMessage({ message }: UserMessageProps): React.ReactNode {
 				{text}
 				{renderImages(message.content)}
 			</div>
+			{actions && actions.length > 0 && <MessageActionsBar message={message as never} actions={actions} />}
 		</div>
 	);
 }

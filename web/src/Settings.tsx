@@ -1,31 +1,36 @@
 import { useState } from "react";
 import ModelsSettings from "./ModelsSettings";
+import type { SettingsTab } from "./types";
 
-type TabId = "models" | "general";
-
-interface TabDef {
-	id: TabId;
-	label: string;
-}
-
-const TABS: TabDef[] = [
-	{ id: "models", label: "Моделі" },
-	{ id: "general", label: "Загальне" },
+/** Стандартні (ядерні) таби налаштувань. */
+const CORE_TABS: SettingsTab[] = [
+	{ id: "models", label: "Моделі", render: () => <ModelsSettings /> },
+	{
+		id: "general",
+		label: "Загальне",
+		render: () => <div className="cc-tab-placeholder">Загальні налаштування — скоро.</div>,
+	},
 ];
 
-/** Сторінка налаштувань — табчаста. Перша таба «Моделі» (підключення провайдерів). */
-export default function Settings(): React.ReactNode {
-	const [tab, setTab] = useState<TabId>("models");
+/**
+ * Сторінка налаштувань — табчаста. Ядерні таби (Моделі/Загальне) +
+ * плагінні таби (ui:settings-tabs). Активна таба рендерить свій render().
+ */
+export default function Settings({ tabs = [] }: { tabs?: SettingsTab[] }): React.ReactNode {
+	// Плагінні таби додаються після ядерних; id плагінних не мають конфліктувати.
+	const allTabs = [...CORE_TABS, ...tabs];
+	const [tab, setTab] = useState<string>(allTabs[0]?.id ?? "models");
+	const active = allTabs.find((t) => t.id === tab) ?? allTabs[0];
 
 	return (
 		<div className="p-4">
 			<h2 className="h4 mb-4">Налаштування</h2>
 			<div className="cc-tabs">
-				{TABS.map((t) => (
+				{allTabs.map((t) => (
 					<button
 						key={t.id}
 						type="button"
-						className={`cc-tab${tab === t.id ? " cc-tab-active" : ""}`}
+						className={`cc-tab${active?.id === t.id ? " cc-tab-active" : ""}`}
 						onClick={() => setTab(t.id)}
 					>
 						{t.label}
@@ -33,10 +38,7 @@ export default function Settings(): React.ReactNode {
 				))}
 			</div>
 
-			{tab === "models" && <ModelsSettings />}
-			{tab === "general" && (
-				<div className="cc-tab-placeholder">Загальні налаштування — скоро.</div>
-			)}
+			<div className="mt-3">{active?.render()}</div>
 		</div>
 	);
 }

@@ -13,9 +13,14 @@ import {
 import "@coudycode/ui/styles.css";
 import { streamChat } from "./chat-stream";
 import { ModelSelector, type CurrentModel, type ProviderGroup } from "./ModelSelector";
+import type { ChatPanel, MessageAction } from "./types";
 
 interface ChatViewProps {
 	sessionId: string;
+	/** Плагінні панелі чату (ui:chat-panel). */
+	chatPanels?: ChatPanel[];
+	/** Плагінні дії на повідомленнях (ui:message-actions). */
+	messageActions?: MessageAction[];
 }
 
 /** Стан компактації як tool call: running → done (з summary). null = не активна. */
@@ -45,7 +50,7 @@ interface ServerSession {
 }
 
 /** Чат із реальним агентом (/api/chat SSE) + історія сесії. */
-export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode {
+export default function ChatView({ sessionId, chatPanels = [], messageActions = [] }: ChatViewProps): React.ReactNode {
 	// Постійна історія сесії (завантажена з бекенду).
 	const [committed, setCommitted] = useState<AgentMessage[]>([]);
 	const [committedStatus, setCommittedStatus] = useState<Record<string, ToolCallStatus>>({});
@@ -61,6 +66,7 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 	const [input, setInput] = useState("");
 	const [running, setRunning] = useState(false);
 	const [compaction, setCompaction] = useState<CompactionState | null>(null);
+	const [panelsOpen, setPanelsOpen] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 
 	// Вибір моделі (поточна + каталог підключених провайдерів).
@@ -328,14 +334,37 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 						disabled={running || compaction !== null}
 						title="Стиснути контекст"
 					>
-						<Layers size={13} /> Compact
-					</button>
+					<Layers size={13} /> Compact
+						</button>
+					</div>
 				</div>
-			</div>
 
-			<div
-				ref={scrollRef}
-				onScroll={handleScroll}
+				{/* Плагінні панелі чату (ui:chat-panel). Показуються лише за наявності. */}
+				{chatPanels.length > 0 && (
+					<div className="cc-chat-panels border-bottom">
+						<button
+							type="button"
+							className="cc-chat-panels-toggle btn btn-sm btn-link text-decoration-none text-muted px-4 py-1"
+							onClick={() => setPanelsOpen((v) => !v)}
+						>
+							{panelsOpen ? "▾" : "▸"} Плагіни ({chatPanels.length})
+						</button>
+						{panelsOpen && (
+							<div className="cc-chat-panels-body px-4 pb-2">
+								{chatPanels.map((panel) => (
+									<div key={panel.id} className="cc-chat-panel">
+										{panel.label && <div className="cc-chat-panel-label small text-muted">{panel.label}</div>}
+										{panel.render()}
+									</div>
+								))}
+							</div>
+						)}
+					</div>
+				)}
+
+				<div
+					ref={scrollRef}
+					onScroll={handleScroll}
 				className="flex-grow-1 overflow-auto px-4 py-3"
 				style={{ background: "var(--pi-page-bg, #f8f8f8)" }}
 			>
@@ -351,6 +380,7 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 							streamingMessage={live.streamingMessage}
 							streamingTextIndex={live.streamingTextIndex}
 							streamingThinkingIndex={live.streamingThinkingIndex}
+							messageActions={messageActions}
 						/>
 					)}
 					{/* Compaction як tool call: running (спінер) → done (success + summary peek). */}

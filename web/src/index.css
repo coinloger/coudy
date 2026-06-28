@@ -457,6 +457,29 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: nowrap;
 }
+/* === Плагінні панелі чату (ui:chat-panel) === */
+.cc-chat-panels {
+  background: var(--pi-page-bg, #f8f8f8);
+}
+.cc-chat-panels-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.cc-chat-panel {
+  flex: 1 1 16rem;
+  min-width: 16rem;
+  background: var(--pi-surface, #fff);
+  border: 1px solid var(--pi-border-muted, #e0e0e0);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+.cc-chat-panel-label {
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 0.62rem;
+  margin-bottom: 0.25rem;
+}
 /* === OAuth-логін === */
 .cc-oauth-provider {
   font-weight: 700;
