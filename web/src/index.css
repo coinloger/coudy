@@ -708,3 +708,37 @@ body {
 	color: var(--pi-text-dim, #767676);
 	display: inline-flex;
 }
+
+/* ===== Шаблони промптів (Settings-таба) ===== */
+.cc-prompt-row {
+	min-width: 0;
+}
+
+/* Колонка з імʼям + превʼю: стискається (min-width:0) під ellipsis. */
+.cc-prompt-info {
+	min-width: 0;
+	overflow: hidden;
+}
+
+.cc-prompt-name {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* Превʼю контенту: 2 рядки з «…», довгий текст не витискає кнопки. */
+.cc-prompt-preview {
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	word-break: break-word;
+	line-height: 1.3;
+	max-height: 2.6em;
+}
+
+/* Група кнопок: нерухома, завжди видима. */
+.cc-prompt-actions {
+	white-space: nowrap;
+}

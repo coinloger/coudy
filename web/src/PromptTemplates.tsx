@@ -155,33 +155,30 @@ export default function PromptTemplates(_props: PromptTemplatesProps): React.Rea
 				) : (
 					<ul className="list-group">
 						{templates.map((t) => (
-							<li
-								key={t.id}
-								className="list-group-item d-flex align-items-start gap-2 px-2 py-2"
-							>
-								<FileText size={16} className="text-secondary mt-1 flex-shrink-0" />
-								<div className="flex-grow-1 min-w-0">
-									<div className="fw-semibold text-truncate">{t.name}</div>
-									<div className="text-muted small text-truncate">
-										{t.content.slice(0, 80) || "(порожній)"}
-									</div>
+							<li key={t.id} className="cc-prompt-row list-group-item d-flex align-items-center gap-2 px-2 py-2">
+								<FileText size={16} className="text-secondary flex-shrink-0" />
+								<div className="cc-prompt-info flex-grow-1 min-w-0">
+									<div className="cc-prompt-name fw-semibold text-truncate">{t.name}</div>
+									<div className="cc-prompt-preview text-muted small">{t.content || "(порожній)"}</div>
 								</div>
-								<button
-									type="button"
-									className="btn btn-sm btn-link text-secondary p-1"
-									onClick={() => startEdit(t)}
-									title="Редагувати"
-								>
-									<Pencil size={14} />
-								</button>
-								<button
-									type="button"
-									className="btn btn-sm btn-link text-danger p-1"
-									onClick={() => void handleDelete(t)}
-									title="Видалити"
-								>
-									<Trash2 size={14} />
-								</button>
+								<div className="cc-prompt-actions d-flex align-items-center flex-shrink-0 gap-1">
+									<button
+										type="button"
+										className="btn btn-sm btn-link text-secondary p-1"
+										onClick={() => startEdit(t)}
+										title="Редагувати"
+									>
+										<Pencil size={14} />
+									</button>
+									<button
+										type="button"
+										className="btn btn-sm btn-link text-danger p-1"
+										onClick={() => void handleDelete(t)}
+										title="Видалити"
+									>
+										<Trash2 size={14} />
+									</button>
+								</div>
 							</li>
 						))}
 					</ul>
