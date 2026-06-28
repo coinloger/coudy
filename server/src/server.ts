@@ -289,6 +289,28 @@ export class CoudyServer {
       return;
     }
 
+    // PATCH /api/providers/:id — оновити contextWindow усіх моделей custom-провайдера.
+    const patchProviderMatch = /^\/api\/providers\/([^/]+)$/.exec(pathname);
+    if (method === "PATCH" && patchProviderMatch) {
+      const id = decodeURIComponent(patchProviderMatch[1]);
+      const def = this.providerDefs.get(id);
+      if (!def) {
+        this.sendJson(res, 404, { error: "Провайдер не знайдено" });
+        return;
+      }
+      const body = await this.readJsonBody(req);
+      const contextWindow =
+        typeof body?.contextWindow === "number" && body.contextWindow > 0 ? body.contextWindow : null;
+      if (contextWindow === null) {
+        this.sendJson(res, 400, { error: "Потрібне поле contextWindow (число > 0)" });
+        return;
+      }
+      def.models = def.models.map((m) => ({ ...m, contextWindow }));
+      this.providerDefs.set(id, def);
+      this.sendJson(res, 200, { id, definition: this.providerDefs.getPublic(id) });
+      return;
+    }
+
     // POST /api/providers/:id/models/fetch — отримати моделі з {baseUrl}/v1/models.
     const fetchMatch = /^\/api\/providers\/([^/]+)\/models\/fetch$/.exec(pathname);
     if (method === "POST" && fetchMatch) {
@@ -573,10 +595,10 @@ export class CoudyServer {
   }
 
   /** Моделі підключених провайдерів: пресети (auth → built-in каталог) + кастомні (models.json). */
-  private buildModelCatalog(): { providers: Array<{ provider: string; models: unknown[] }> } {
+  private buildModelCatalog(): { providers: Array<{ provider: string; custom?: boolean; models: unknown[] }> } {
     // (а) Пресети: auth.list() → built-in каталог @coudycode/ai.
     const presetProviders = this.auth.list();
-    const providers: Array<{ provider: string; models: unknown[] }> = presetProviders.map(provider => ({
+    const providers: Array<{ provider: string; custom?: boolean; models: unknown[] }> = presetProviders.map(provider => ({
       provider,
       models: getModels(provider as never).map(m => this.modelInfo(m)),
     }));
@@ -584,7 +606,7 @@ export class CoudyServer {
     for (const id of this.providerDefs.list()) {
       const def = this.providerDefs.get(id);
       if (!def) continue;
-      providers.push({ provider: id, models: def.models.map(m => this.customModelInfo(m, id, def)) });
+      providers.push({ provider: id, custom: true, models: def.models.map(m => this.customModelInfo(m, id, def)) });
     }
     return { providers };
   }

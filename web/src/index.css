@@ -254,6 +254,19 @@ body {
 .cc-provider-available {
   background: var(--pi-page-bg, #f8f8f8);
 }
+.cc-provider-cw {
+  margin-top: 0.5rem;
+  padding-left: 0.4rem;
+}
+.cc-provider-cw label {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--pi-text-muted, #6c6c6c);
+  margin-bottom: 0.2rem;
+}
+.cc-provider-cw-input {
+  width: 9rem !important;
+}
 .cc-provider-success {
   color: var(--pi-success, #588458);
   font-size: 0.74rem;

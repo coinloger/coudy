@@ -9,19 +9,34 @@ async function disconnect(id: string): Promise<boolean> {
 	return r.ok;
 }
 
-/** Карта підключеного провайдера: імʼя, ✓, кількість моделей, список (expandable), «Видалити». */
+/** Оновити contextWindow усіх моделей custom-провайдера (PATCH). */
+async function patchContextWindow(id: string, contextWindow: number): Promise<boolean> {
+	const r = await fetch(`/api/providers/${encodeURIComponent(id)}`, {
+		method: "PATCH",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ contextWindow }),
+	});
+	return r.ok;
+}
 function ConnectedProvider({
 	group,
 	removed,
 	onRemoved,
+	onContextWindowChanged,
 }: {
 	group: ProviderGroup;
 	removed: boolean;
 	onRemoved: (id: string) => void;
+	onContextWindowChanged: (id: string) => void;
 }): React.ReactNode {
 	const [open, setOpen] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	// Inline-редагування contextWindow (тільки для custom-провайдерів).
+	const firstCw = group.models[0]?.contextWindow ?? 128000;
+	const [cwDraft, setCwDraft] = useState(String(firstCw));
+	const [cwBusy, setCwBusy] = useState(false);
+	const [cwError, setCwError] = useState<string | null>(null);
 
 	const remove = (): void => {
 		setBusy(true);
@@ -30,6 +45,20 @@ function ConnectedProvider({
 			.then((ok) => (ok ? onRemoved(group.provider) : setError("Не вдалося видалити")))
 			.catch(() => setError("Не вдалося видалити"))
 			.finally(() => setBusy(false));
+	};
+
+	const saveCw = (): void => {
+		const cw = Number(cwDraft);
+		if (!cw || cw <= 0) {
+			setCwError("Введіть число > 0");
+			return;
+		}
+		setCwBusy(true);
+		setCwError(null);
+		patchContextWindow(group.provider, cw)
+			.then((ok) => (ok ? onContextWindowChanged(group.provider) : setCwError("Не вдалося зберегти")))
+			.catch(() => setCwError("Не вдалося зберегти"))
+			.finally(() => setCwBusy(false));
 	};
 
 	return (
@@ -69,6 +98,30 @@ function ConnectedProvider({
 					))}
 				</ul>
 			)}
+			{group.custom && (
+				<div className="cc-provider-cw">
+					<label>Context window</label>
+					<div className="d-flex gap-1 align-items-center">
+						<input
+							type="number"
+							className="form-control form-control-sm cc-provider-cw-input"
+							value={cwDraft}
+							onChange={(e) => setCwDraft(e.target.value)}
+							disabled={cwBusy}
+							placeholder="200000"
+						/>
+						<button
+							type="button"
+							className="btn btn-sm btn-outline-secondary"
+							onClick={saveCw}
+							disabled={cwBusy}
+						>
+							Зберегти
+						</button>
+					</div>
+					{cwError && <div className="cc-provider-error">{cwError}</div>}
+				</div>
+			)}
 			{removed && <div className="cc-provider-success">Відʼєднано.</div>}
 			{error && <div className="cc-provider-error">{error}</div>}
 		</div>
@@ -107,7 +160,13 @@ export default function ModelsSettings(): React.ReactNode {
 				) : (
 					<div className="cc-provider-list">
 						{connected.map((g) => (
-							<ConnectedProvider key={g.provider} group={g} removed={false} onRemoved={refresh} />
+							<ConnectedProvider
+							key={g.provider}
+							group={g}
+							removed={false}
+							onRemoved={refresh}
+							onContextWindowChanged={refresh}
+						/>
 						))}
 					</div>
 				)}

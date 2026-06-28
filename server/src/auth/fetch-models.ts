@@ -10,6 +10,11 @@ interface RemoteModelEntry {
 	id: string;
 	display_name?: string;
 	name?: string;
+	// context length з різних форматів відповідей /v1/models:
+	// LM Studio: data[].meta.context_length; іноді топ-level context_length/context_window.
+	meta?: { context_length?: number; context_window?: number };
+	context_length?: number;
+	context_window?: number;
 }
 
 interface RemoteModelsResponse {
@@ -76,7 +81,12 @@ export async function fetchRemoteModels(
 				reasoning: DEFAULT_MODEL.reasoning,
 				input: [...DEFAULT_MODEL.input],
 				cost: { ...DEFAULT_MODEL.cost },
-				contextWindow: DEFAULT_MODEL.contextWindow,
+				contextWindow:
+					entry.meta?.context_length ??
+					entry.meta?.context_window ??
+					entry.context_length ??
+					entry.context_window ??
+					DEFAULT_MODEL.contextWindow,
 				maxTokens: DEFAULT_MODEL.maxTokens,
 			}));
 		if (models.length === 0) {

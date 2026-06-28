@@ -17,6 +17,7 @@ export interface ModelEntry {
 /** Група моделей одного провайдера. */
 export interface ProviderGroup {
 	provider: string;
+	custom?: boolean;
 	models: ModelEntry[];
 }
 

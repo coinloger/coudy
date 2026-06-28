@@ -9,6 +9,8 @@ type Branch = "openai" | "anthropic" | "custom" | "subscription";
 export interface FetchedModel {
 	id: string;
 	name?: string;
+	/** Реальний contextWindow з /v1/models (meta.context_length), якщо провайдер віддав. */
+	contextWindow?: number;
 }
 
 export interface AddProviderDialogProps {
@@ -35,6 +37,7 @@ export function AddProviderDialog({ open, onClose, onDone }: AddProviderDialogPr
 	const [apiType, setApiType] = useState<ApiType>("openai-completions");
 	const [providerId, setProviderId] = useState("");
 	const [models, setModels] = useState<FetchedModel[]>([]);
+	const [contextWindow, setContextWindow] = useState<number>(128000);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
@@ -48,6 +51,7 @@ export function AddProviderDialog({ open, onClose, onDone }: AddProviderDialogPr
 			setApiType("openai-completions");
 			setProviderId("");
 			setModels([]);
+			setContextWindow(128000);
 			setBusy(false);
 			setError(null);
 			setOauthPick(null);
@@ -132,7 +136,7 @@ export function AddProviderDialog({ open, onClose, onDone }: AddProviderDialogPr
 				apiType,
 				baseUrl: baseUrl.trim(),
 				apiKey: apiKey.trim(),
-				models,
+				models: models.map((m) => ({ ...m, contextWindow: m.contextWindow ?? contextWindow })),
 			}),
 		})
 			.then((r) => (r.ok ? onClose() : Promise.reject(r.status)))
@@ -259,7 +263,19 @@ export function AddProviderDialog({ open, onClose, onDone }: AddProviderDialogPr
 								/>
 							</div>
 
-							<div className="d-flex gap-2 mb-2">
+							<div className="cc-field">
+							<label>Context window (токени)</label>
+							<input
+								type="number"
+								className="form-control form-control-sm"
+								placeholder="200000"
+								value={contextWindow}
+								onChange={(e) => setContextWindow(Number(e.target.value) || 128000)}
+								disabled={busy}
+							/>
+						</div>
+
+						<div className="d-flex gap-2 mb-2">
 								<button
 									type="button"
 									className="btn btn-sm btn-outline-secondary"
