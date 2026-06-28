@@ -93,6 +93,19 @@ export function activate(ctx: {
 		},
 	]);
 
+	// --- Команда палітри (ui:command-palette) ---
+	ctx.hooks.addFilter("ui:command-palette", (commands: unknown) => [
+		...(commands as unknown[]),
+		{
+			id: "example-hello",
+			label: "Example: привітання",
+			icon: "Sparkles",
+			keywords: "demo hello привет",
+			group: "Example Plugin",
+			action: () => window.alert("Привіт з плагіна!"),
+		},
+	]);
+
 	// --- Дія на повідомленнях (ui:message-actions) ---
 	ctx.hooks.addFilter("ui:message-actions", (actions: unknown) => [
 		...(actions as unknown[]),

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import Dashboard from "./Dashboard";
@@ -6,10 +6,12 @@ import PluginManager from "./PluginManager";
 import ChatView from "./ChatView";
 import Settings from "./Settings";
 import Playground from "./playground/Playground";
+import CommandPalette from "./CommandPalette";
 import { useCoudyUI } from "./useCoudyUI";
 import { useSessions } from "./sessions";
 import type {
   ChatPanel,
+  Command,
   DashboardWidget,
   MessageAction,
   Route as PluginRoute,
@@ -44,6 +46,7 @@ const defaultRoutes: PluginRoute[] = [];
 const defaultSettingsTabs: SettingsTab[] = [];
 const defaultChatPanels: ChatPanel[] = [];
 const defaultMessageActions: MessageAction[] = [];
+const defaultCommands: Command[] = [];
 
 export default function App(): React.ReactNode {
   const [collapsed, setCollapsed] = useState<boolean>(() => loadCollapsed());
@@ -57,7 +60,10 @@ export default function App(): React.ReactNode {
     settingsTabs: defaultSettingsTabs,
     chatPanels: defaultChatPanels,
     messageActions: defaultMessageActions,
+    commands: defaultCommands,
   });
+
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -76,6 +82,95 @@ export default function App(): React.ReactNode {
     const id = await sessions.createSession();
     navigate(`/chat/${id}`);
   };
+
+  /** Стиснути контекст поточної сесії (POST /api/sessions/:id/compact SSE). */
+  const handleCompact = async (): Promise<void> => {
+    const id = sessions.activeId;
+    if (!id) return;
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/compact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (res.ok) await sessions.refresh();
+    } catch (e) {
+      console.error("[palette] compact помилка:", e);
+    }
+  };
+
+  // Базові (вбудовані) команди — плагіни розширюють через ui:command-palette.
+  const coreCommands = useMemo<Command[]>(
+    () => [
+      {
+        id: "core:new-chat",
+        label: "Новий чат",
+        icon: "MessageSquarePlus",
+        keywords: "new chat session create створити",
+        group: "Дії",
+        action: () => void handleCreateSession(),
+      },
+      ...(sessions.activeId
+        ? [
+            {
+              id: "core:compact",
+              label: "Стиснути контекст",
+              icon: "Archive",
+              keywords: "compact summarize summarize стиснути контекст",
+              group: "Дії",
+              action: () => void handleCompact(),
+            } satisfies Command,
+          ]
+        : []),
+      {
+        id: "core:dashboard",
+        label: "Дашборд",
+        icon: "LayoutDashboard",
+        keywords: "home dashboard головна",
+        group: "Навігація",
+        action: () => navigate("/dashboard"),
+      },
+      {
+        id: "core:plugins",
+        label: "Плагіни",
+        icon: "Puzzle",
+        keywords: "plugins extensions extensions",
+        group: "Навігація",
+        action: () => navigate("/plugins"),
+      },
+      {
+        id: "core:settings",
+        label: "Налаштування",
+        icon: "Settings",
+        keywords: "settings preferences налаштування",
+        group: "Навігація",
+        action: () => navigate("/settings"),
+      },
+      ...sessions.sessions.slice(0, 5).map((s, i) => ({
+        id: `core:session:${s.id}`,
+        label: s.title || `Чат ${i + 1}`,
+        icon: "MessageSquare",
+        keywords: "chat session чат",
+        group: "Нещодавні",
+        action: () => handleSelectSession(s.id),
+      })),
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sessions.activeId, sessions.sessions],
+  );
+
+  // Команди палітри: агреговані (core + плагіни з ui:command-palette) + core (жирні).
+  const paletteCommands = useMemo<Command[]>(() => {
+    const seen = new Set(coreCommands.map((c) => c.id));
+    const merged: Command[] = [...coreCommands];
+    for (const c of ui.commands) {
+      if (!seen.has(c.id)) {
+        seen.add(c.id);
+        merged.push(c);
+      }
+    }
+    return merged;
+  }, [coreCommands, ui.commands]);
 
   return (
     <div className="d-flex vh-100 overflow-hidden bg-light">
@@ -113,6 +208,13 @@ export default function App(): React.ReactNode {
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>
+
+      {/* Командна палітра (⌘K / Ctrl+K) — глобальна, поза роутами. */}
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        commands={paletteCommands}
+      />
     </div>
   );
 }

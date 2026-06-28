@@ -69,6 +69,22 @@ export interface ChatPanel {
   render: () => ReactNode;
 }
 
+/** Команда командної палітри (⌘K) — виконує довільну дію. */
+export interface Command {
+  /** Унікальний id. */
+  id: string;
+  /** Людська назва (пошук + рендер). */
+  label: string;
+  /** Назва іконки Lucide (напр. "MessageSquarePlus"). */
+  icon?: string;
+  /** Додаткові ключові слова для fuzzy-пошуку. */
+  keywords?: string;
+  /** Група для секційної візуалізації (напр. "Навігація", "Дії"). */
+  group?: string;
+  /** Виконується при виборі команди. */
+  action: () => void;
+}
+
 /** Реекспорт типу дії повідомлення (джерело правди — @coudycode/ui). */
 export type { MessageAction };
 

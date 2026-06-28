@@ -595,3 +595,116 @@ body {
   text-align: center;
   color: var(--pi-text-muted, #6c6c6c);
 }
+
+/* ===== Command Palette (⌘K) ===== */
+.cc-palette-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 2000;
+	background: rgba(0, 0, 0, 0.35);
+	display: flex;
+	align-items: flex-start;
+	justify-content: center;
+	padding-top: 12vh;
+}
+
+.cc-palette {
+	width: min(560px, 92vw);
+	max-height: 60vh;
+	display: flex;
+	flex-direction: column;
+	background: var(--pi-card-bg, #fff);
+	border: 1px solid var(--pi-border-muted, #b0b0b0);
+	border-radius: 12px;
+	box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+	overflow: hidden;
+}
+
+.cc-palette-input-wrap {
+	position: relative;
+	display: flex;
+	align-items: center;
+	border-bottom: 1px solid var(--pi-border-muted, #e2e2e2);
+}
+
+.cc-palette-search-icon {
+	position: absolute;
+	left: 14px;
+	color: var(--pi-text-dim, #767676);
+	pointer-events: none;
+}
+
+.cc-palette-input {
+	flex: 1;
+	border: 0;
+	outline: 0;
+	padding: 14px 16px 14px 42px;
+	font-size: 15px;
+	background: transparent;
+	color: var(--pi-text, #1f2328);
+}
+
+.cc-palette-esc {
+	margin-right: 12px;
+	padding: 2px 6px;
+	font-size: 11px;
+	color: var(--pi-text-muted, #6c6c6c);
+	background: var(--pi-page-bg, #f8f8f8);
+	border: 1px solid var(--pi-border-muted, #d0d0d0);
+	border-radius: 4px;
+}
+
+.cc-palette-empty {
+	padding: 28px 16px;
+	text-align: center;
+	color: var(--pi-text-muted, #6c6c6c);
+	font-size: 14px;
+}
+
+.cc-palette-list {
+	overflow-y: auto;
+	padding: 6px 0;
+}
+
+.cc-palette-group-title {
+	padding: 6px 16px 2px;
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--pi-text-dim, #767676);
+}
+
+.cc-palette-item {
+	width: 100%;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 9px 16px;
+	border: 0;
+	background: transparent;
+	color: var(--pi-text, #1f2328);
+	font-size: 14px;
+	text-align: left;
+	cursor: pointer;
+}
+
+.cc-palette-item.is-active,
+.cc-palette-item:hover {
+	background: color-mix(in srgb, var(--pi-accent, #5a8080) 12%, transparent);
+}
+
+.cc-palette-item-icon {
+	display: inline-flex;
+	color: var(--pi-accent, #5a8080);
+	flex-shrink: 0;
+}
+
+.cc-palette-item-label {
+	flex: 1;
+}
+
+.cc-palette-item-hint {
+	color: var(--pi-text-dim, #767676);
+	display: inline-flex;
+}

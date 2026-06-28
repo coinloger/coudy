@@ -3,6 +3,7 @@ import { hooks } from "./hooks";
 import { loadAndActivatePlugins, onPluginsChanged } from "./plugins";
 import type {
   ChatPanel,
+  Command,
   DashboardWidget,
   MessageAction,
   Route,
@@ -20,6 +21,8 @@ export interface CoudyUIState {
   settingsTabs: SettingsTab[];
   chatPanels: ChatPanel[];
   messageActions: MessageAction[];
+  /** Агреговані команди палітри (⌘K): core + плагіни (через ui:command-palette). */
+  commands: Command[];
   errors: string[];
 }
 
@@ -30,6 +33,8 @@ export interface CoudyUIDefaults {
   settingsTabs: SettingsTab[];
   chatPanels: ChatPanel[];
   messageActions: MessageAction[];
+  /** Базові (вбудовані) команди палітри — плагіни розширюють через ui:command-palette. */
+  commands: Command[];
 }
 
 /**
@@ -37,10 +42,13 @@ export interface CoudyUIDefaults {
  * застосовує applyFilters до дефолтів і кладе результат у React state.
  *
  * Реактивність: підписується на onPluginsChanged (toggle/delete фронт-плагінів)
- * → перевикликає applyFilters → setState → UI оновлюється ЖИВО без F5.
+ * → перевикликати applyFilters → setState → UI оновлюється ЖИВО без F5.
  */
 export function useCoudyUI(defaults: CoudyUIDefaults): CoudyUIState {
   const defaultsRef = useRef(defaults);
+  // Тримати defaults свіжими (команди навігації/останніх сесій оновлюються).
+  defaultsRef.current = defaults;
+  const errorsRef = useRef<string[]>([]);
   const [state, setState] = useState<CoudyUIState>(() => ({
     status: "loading",
     sidebarItems: defaults.sidebarItems,
@@ -49,31 +57,41 @@ export function useCoudyUI(defaults: CoudyUIDefaults): CoudyUIState {
     settingsTabs: defaults.settingsTabs,
     chatPanels: defaults.chatPanels,
     messageActions: defaults.messageActions,
+    commands: defaults.commands,
     errors: [],
   }));
 
-  // Перевикликати applyFilters для всіх 6 ui-фільтрів → setState.
-  const reapply = async (errors: string[]): Promise<void> => {
+  // Перевикликати applyFilters для всіх 7 ui-фільтрів → setState.
+  const reapply = async (): Promise<void> => {
     const d = defaultsRef.current;
-    const [sidebarItems, dashboardWidgets, routes, settingsTabs, chatPanels, messageActions] =
-      await Promise.all([
-        hooks.applyFilters<SidebarItem[]>("ui:sidebar-items", d.sidebarItems),
-        hooks.applyFilters<DashboardWidget[]>("ui:dashboard-widgets", d.dashboardWidgets),
-        hooks.applyFilters<Route[]>("ui:routes", d.routes),
-        hooks.applyFilters<SettingsTab[]>("ui:settings-tabs", d.settingsTabs),
-        hooks.applyFilters<ChatPanel[]>("ui:chat-panel", d.chatPanels),
-        hooks.applyFilters<MessageAction[]>("ui:message-actions", d.messageActions),
-      ]);
-    setState((prev) => ({
-      ...prev,
-      status: errors.length > 0 ? "error" : "ready",
+    const [
       sidebarItems,
       dashboardWidgets,
       routes,
       settingsTabs,
       chatPanels,
       messageActions,
-      errors,
+      commands,
+    ] = await Promise.all([
+      hooks.applyFilters<SidebarItem[]>("ui:sidebar-items", d.sidebarItems),
+      hooks.applyFilters<DashboardWidget[]>("ui:dashboard-widgets", d.dashboardWidgets),
+      hooks.applyFilters<Route[]>("ui:routes", d.routes),
+      hooks.applyFilters<SettingsTab[]>("ui:settings-tabs", d.settingsTabs),
+      hooks.applyFilters<ChatPanel[]>("ui:chat-panel", d.chatPanels),
+      hooks.applyFilters<MessageAction[]>("ui:message-actions", d.messageActions),
+      hooks.applyFilters<Command[]>("ui:command-palette", d.commands),
+    ]);
+    setState((prev) => ({
+      ...prev,
+      status: errorsRef.current.length > 0 ? "error" : "ready",
+      sidebarItems,
+      dashboardWidgets,
+      routes,
+      settingsTabs,
+      chatPanels,
+      messageActions,
+      commands,
+      errors: errorsRef.current,
     }));
   };
 
@@ -90,12 +108,13 @@ export function useCoudyUI(defaults: CoudyUIDefaults): CoudyUIState {
       } catch (e) {
         errors.push(e instanceof Error ? e.message : String(e));
       }
-      if (!cancelled) await reapply(errors);
+      errorsRef.current = errors;
+      if (!cancelled) await reapply();
     })();
 
     // Реактивність: при зміні плагінів (toggle/delete) → re-applyFilters → setState.
     const unsubscribe = onPluginsChanged(() => {
-      if (!cancelled) void reapply(state.errors);
+      if (!cancelled) void reapply();
     });
 
     return () => {
