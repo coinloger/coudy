@@ -254,6 +254,38 @@ body {
 .cc-provider-available {
   background: var(--pi-page-bg, #f8f8f8);
 }
+/* Toggle-перемикач плагіна (enable/disable). */
+.cc-plugin-toggle {
+  outline: none;
+}
+.cc-toggle {
+  display: inline-block;
+  width: 2.2rem;
+  height: 1.25rem;
+  border-radius: 0.7rem;
+  position: relative;
+  transition: background 0.15s ease;
+}
+.cc-toggle-on {
+  background: var(--pi-accent, #5a8080);
+}
+.cc-toggle-off {
+  background: var(--pi-border-muted, #b0b0b0);
+}
+.cc-toggle-knob {
+  position: absolute;
+  top: 0.15rem;
+  left: 0.15rem;
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+.cc-toggle-on .cc-toggle-knob {
+  transform: translateX(0.95rem);
+}
 .cc-provider-success {
   color: var(--pi-success, #588458);
   font-size: 0.74rem;

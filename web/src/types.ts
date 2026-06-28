@@ -9,7 +9,10 @@ export interface ApiPlugin {
   version: string;
   description: string;
   frontendEntry: string | null;
+  /** Effective преференс користувача (enable/disable). */
   enabled: boolean;
+  /** Зараз запущений (activate викликано). */
+  active: boolean;
 }
 
 export interface ApiPluginsResponse {

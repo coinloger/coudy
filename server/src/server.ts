@@ -123,7 +123,7 @@ export class CoudyServer {
       return;
     }
 
-    // GET /api/plugins — список активних плагінів + URL їхніх frontend-бандлів.
+    // GET /api/plugins — список плагінів з active/enabled станом + URL фронтенд-бандлів.
     if (method === "GET" && pathname === "/api/plugins") {
       const plugins = this.loader.list().map(p => ({
         name: p.manifest.name,
@@ -133,9 +133,39 @@ export class CoudyServer {
         frontendEntry: p.manifest.entry?.frontend
           ? `/plugins/${p.manifest.name}/${p.manifest.entry.frontend.replace(/^\.?\//, "")}`
           : null,
-        enabled: p.active,
+        // active = зараз запущений; enabled = effective преференс користувача.
+        active: p.active,
+        enabled: p.effectiveEnabled,
       }));
       this.sendJson(res, 200, { plugins });
+      return;
+    }
+
+    // POST /api/plugins/:id/enable — увімкнути (persisted + hot activate).
+    const pluginEnableMatch = /^\/api\/plugins\/([^/]+)\/enable$/.exec(pathname);
+    if (method === "POST" && pluginEnableMatch) {
+      const id = decodeURIComponent(pluginEnableMatch[1]);
+      const result = await this.loader.enable(id);
+      if (!result.ok) {
+        const status = result.error.includes("не знайдено") ? 404 : 500;
+        this.sendJson(res, status, { error: result.error });
+        return;
+      }
+      this.sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    // POST /api/plugins/:id/disable — вимкнути (persisted + hot deactivate).
+    const pluginDisableMatch = /^\/api\/plugins\/([^/]+)\/disable$/.exec(pathname);
+    if (method === "POST" && pluginDisableMatch) {
+      const id = decodeURIComponent(pluginDisableMatch[1]);
+      const result = await this.loader.disable(id);
+      if (!result.ok) {
+        const status = result.error.includes("не знайдено") ? 404 : 500;
+        this.sendJson(res, status, { error: result.error });
+        return;
+      }
+      this.sendJson(res, 200, { ok: true });
       return;
     }
 

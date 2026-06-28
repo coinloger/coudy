@@ -1,11 +1,18 @@
 /**
  * Plugin loader: auto-discover плагінів у plugins/*,
  * читання plugin.json, dynamic import backend-entry, lifecycle activate/deactivate.
+ *
+ * Persisted enable/disable: ~/.coudycode/plugins-state.json (overrides).
+ * Hot activate/deactivate: кожен плагін отримує scoped HookEngine, що відстежує
+ * реєстрації (addAction/addFilter) → при деактивації вони bulk-прибираються,
+ * тож вимкнений плагін перестає впливати на tools:register/prompt:system.
  */
 
-import { readdir, readFile } from "node:fs/promises";
+import { chmodSync } from "node:fs";
+import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { homedir } from "node:os";
 import { createRequire } from "node:module";
 import {
   HookEngine,
@@ -25,6 +32,13 @@ const CORE_VERSION: string = (() => {
     return "0.0.0";
   }
 })();
+
+/** Базова директорія coudycode (env COUDYCODE_DIR || ~/.coudycode). */
+function getCoudyDir(): string {
+  const fromEnv = process.env["COUDYCODE_DIR"];
+  if (fromEnv && fromEnv.trim().length > 0) return fromEnv;
+  return join(homedir(), ".coudycode");
+}
 
 /** Перевірити рядок semver (major.minor.patch, опц. -prerelease). */
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?$/;
@@ -107,12 +121,128 @@ function createUtils(prefix: string) {
   };
 }
 
+/**
+ * Persisted enable/disable overrides (~/.coudycode/plugins-state.json).
+ * Effective enabled = override ?? manifest.enabled ?? true.
+ */
+interface PluginsState {
+  overrides: Record<string, boolean>;
+}
+
+class PluginStateStore {
+  private readonly filePath: string;
+
+  constructor(coudyDir: string) {
+    this.filePath = join(coudyDir, "plugins-state.json");
+  }
+
+  private async read(): Promise<PluginsState> {
+    try {
+      const raw = await readFile(this.filePath, "utf-8");
+      const parsed = JSON.parse(raw) as Partial<PluginsState>;
+      return { overrides: parsed.overrides ?? {} };
+    } catch {
+      return { overrides: {} };
+    }
+  }
+
+  private async write(state: PluginsState): Promise<void> {
+    await mkdir(join(this.filePath, ".."), { recursive: true });
+    await writeFile(this.filePath, JSON.stringify(state, null, 2), { mode: 0o600 });
+    try {
+      chmodSync(this.filePath, 0o600);
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  /** Effective enabled = override ?? manifest.enabled ?? true. */
+  async getEffective(name: string, manifestDefault: boolean | undefined): Promise<boolean> {
+    const state = await this.read();
+    if (name in state.overrides) return state.overrides[name]!;
+    return manifestDefault ?? true;
+  }
+
+  async setOverride(name: string, enabled: boolean): Promise<void> {
+    const state = await this.read();
+    state.overrides[name] = enabled;
+    await this.write(state);
+  }
+}
+
+/**
+ * Scoped HookEngine для плагіна: делегує реєстрацію (addAction/addFilter) батьківському
+ * (спільному) движку, але запамʼятовує повернуті ID. doAction/applyFilters теж делегуються.
+ * При deactivate — removeAll() прибирає всі реєстрації цього плагіна (і tools:register,
+ * і prompt:system фільтри), тож вимкнений плагін не впливає на агента.
+ */
+class ScopedHookEngine extends HookEngine {
+  private readonly parent: HookEngine;
+  private registrations: Array<{ name: string; id: string }> = [];
+
+  constructor(parent: HookEngine) {
+    super();
+    this.parent = parent;
+  }
+
+  override addAction(name: string, callback: (...args: unknown[]) => void | Promise<void>, priority = 10): string {
+    const id = this.parent.addAction(name, callback, priority);
+    this.registrations.push({ name, id });
+    return id;
+  }
+
+  override addFilter<T = unknown>(name: string, callback: (value: T, ...args: unknown[]) => T | Promise<T>, priority = 10): string {
+    const id = this.parent.addFilter<T>(name, callback, priority);
+    this.registrations.push({ name, id });
+    return id;
+  }
+
+  override doAction(name: string, ...args: unknown[]): Promise<void> {
+    return this.parent.doAction(name, ...args);
+  }
+
+  override applyFilters<T = unknown>(name: string, value: T, ...args: unknown[]): Promise<T> {
+    return this.parent.applyFilters<T>(name, value, ...args);
+  }
+
+  override has(name: string): boolean {
+    return this.parent.has(name);
+  }
+
+  override count(name: string): number {
+    return this.parent.count(name);
+  }
+
+  override removeAction(name: string, id: string): void {
+    this.parent.removeAction(name, id);
+    this.registrations = this.registrations.filter((r) => r.id !== id);
+  }
+
+  override removeFilter(name: string, id: string): void {
+    this.parent.removeFilter(name, id);
+    this.registrations = this.registrations.filter((r) => r.id !== id);
+  }
+
+  /** Bulk-remove всіх реєстрацій цього плагіна (action + filter). */
+  removeAll(): void {
+    for (const { name, id } of this.registrations) {
+      this.parent.removeAction(name, id);
+    }
+    this.registrations = [];
+  }
+}
+
 /** Завантажений плагін: маніфест + директорія + бекенд-модуль + стан. */
 export interface LoadedPlugin {
   manifest: PluginManifest;
   dir: string;
   module: PluginBackendModule | null;
+  /** Зараз запущений (activate викликано). */
   active: boolean;
+  /** Effective enabled преференс (override ?? manifest.enabled ?? true). */
+  effectiveEnabled: boolean;
+  /** Scoped hooks цього плагіна (створюється при activate). */
+  scope?: ScopedHookEngine;
 }
 
 export interface PluginLoaderOptions {
@@ -124,13 +254,15 @@ export class PluginLoader {
   private plugins = new Map<string, LoadedPlugin>();
   private readonly hooks: HookEngine;
   private readonly pluginsDir: string;
+  private readonly state: PluginStateStore;
 
   constructor(opts: PluginLoaderOptions) {
     this.hooks = opts.hooks;
     this.pluginsDir = opts.pluginsDir;
+    this.state = new PluginStateStore(getCoudyDir());
   }
 
-  /** Auto-discover: знайти всі plugins/<name>/ та активувати увімкнені. */
+  /** Auto-discover: знайти всі plugins/<name>/ та активувати увімкнені (effective). */
   async loadAll(): Promise<void> {
     let entries: import("node:fs").Dirent[];
     try {
@@ -152,6 +284,7 @@ export class PluginLoader {
     }
   }
 
+  /** Завантажити маніфест + модуль, зареєструвати в map, активувати якщо effective enabled. */
   private async loadOne(dir: string): Promise<void> {
     const manifestPath = join(dir, "plugin.json");
     const raw = await readFile(manifestPath, "utf-8");
@@ -164,20 +297,9 @@ export class PluginLoader {
       return;
     }
 
-    if (manifest.enabled === false) {
-      this.plugins.set(manifest.name, { manifest, dir, module: null, active: false });
-      console.log(`[plugin-loader] "${manifest.name}" вимкнено — пропускаю`);
-      return;
-    }
+    const effectiveEnabled = await this.state.getEffective(manifest.name, manifest.enabled);
 
-    const context: PluginContext = {
-      hooks: this.hooks,
-      registry: createRegistry(manifest.name),
-      utils: createUtils(`plugin:${manifest.name}`),
-      pluginPath: dir,
-      manifest,
-    };
-
+    // Завантажити модуль (навіть для вимкнених — щоб можна було hot-увімкнути).
     let module: PluginBackendModule | null = null;
     const backendEntry = manifest.entry?.backend;
     if (backendEntry) {
@@ -186,35 +308,109 @@ export class PluginLoader {
       module = imported as PluginBackendModule;
     }
 
-    this.plugins.set(manifest.name, { manifest, dir, module, active: false });
+    this.plugins.set(manifest.name, {
+      manifest,
+      dir,
+      module,
+      active: false,
+      effectiveEnabled,
+    });
 
-    if (module?.activate) {
-      await module.activate(context);
-      const loaded = this.plugins.get(manifest.name)!;
-      loaded.active = true;
-      await this.hooks.doAction("plugin:activate", manifest.name);
-      console.log(`[plugin-loader] "${manifest.name}" активовано`);
+    if (effectiveEnabled) {
+      await this.activate(manifest.name);
     } else {
-      console.log(`[plugin-loader] "${manifest.name}" завантажено (без backend-entry)`);
+      console.log(`[plugin-loader] "${manifest.name}" вимкнено — пропускаю`);
     }
   }
 
-  /** Деактивувати всі активні плагіни у зворотному порядку. */
+  /** Побудувати контекст активації зі scoped hooks. */
+  private buildContext(plugin: LoadedPlugin): PluginContext {
+    const scope = plugin.scope ?? new ScopedHookEngine(this.hooks);
+    plugin.scope = scope;
+    return {
+      hooks: scope,
+      registry: createRegistry(plugin.manifest.name),
+      utils: createUtils(`plugin:${plugin.manifest.name}`),
+      pluginPath: plugin.dir,
+      manifest: plugin.manifest,
+    };
+  }
+
+  /** Hot-активувати плагін: викликати activate(ctx), позначити active. */
+  async activate(name: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    const plugin = this.plugins.get(name);
+    if (!plugin) return { ok: false, error: `Плагін "${name}" не знайдено` };
+    if (plugin.active) return { ok: true };
+    if (!plugin.module?.activate) {
+      plugin.active = true;
+      return { ok: true };
+    }
+    try {
+      const context = this.buildContext(plugin);
+      await plugin.module.activate(context);
+      plugin.active = true;
+      plugin.effectiveEnabled = true;
+      await this.hooks.doAction("plugin:activate", name);
+      console.log(`[plugin-loader] "${name}" активовано`);
+      return { ok: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[plugin-loader] Помилка активації "${name}":`, msg);
+      return { ok: false, error: msg };
+    }
+  }
+
+  /** Hot-деактивувати плагін: deactivate(ctx) + bulk-remove хуків, позначити inactive. */
+  async deactivate(name: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    const plugin = this.plugins.get(name);
+    if (!plugin) return { ok: false, error: `Плагін "${name}" не знайдено` };
+    if (!plugin.active) return { ok: true };
+    try {
+      const context = this.buildContext(plugin);
+      if (plugin.module?.deactivate) {
+        await plugin.module.deactivate(context);
+      }
+      // Bulk-remove усіх реєстрацій (tools:register, prompt:system, actions…).
+      plugin.scope?.removeAll();
+      plugin.active = false;
+      plugin.effectiveEnabled = false;
+      await this.hooks.doAction("plugin:deactivate", name);
+      console.log(`[plugin-loader] "${name}" деактивовано`);
+      return { ok: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[plugin-loader] Помилка деактивації "${name}":`, msg);
+      return { ok: false, error: msg };
+    }
+  }
+
+  /** Увімкнути (persisted override true) + hot-activate. */
+  async enable(name: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    const plugin = this.plugins.get(name);
+    if (!plugin) return { ok: false, error: `Плагін "${name}" не знайдено` };
+    await this.state.setOverride(name, true);
+    return this.activate(name);
+  }
+
+  /** Вимкнути (persisted override false) + hot-deactivate. */
+  async disable(name: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    const plugin = this.plugins.get(name);
+    if (!plugin) return { ok: false, error: `Плагін "${name}" не знайдено` };
+    await this.state.setOverride(name, false);
+    return this.deactivate(name);
+  }
+
+  /** Деактивувати всі активні плагіни у зворотному порядку (graceful shutdown). */
   async unloadAll(): Promise<void> {
     const entries = Array.from(this.plugins.entries()).reverse();
     for (const [name, plugin] of entries) {
       if (!plugin.active) continue;
-      const context: PluginContext = {
-        hooks: this.hooks,
-        registry: createRegistry(name),
-        utils: createUtils(`plugin:${name}`),
-        pluginPath: plugin.dir,
-        manifest: plugin.manifest,
-      };
       try {
         if (plugin.module?.deactivate) {
+          const context = this.buildContext(plugin);
           await plugin.module.deactivate(context);
         }
+        plugin.scope?.removeAll();
         plugin.active = false;
         await this.hooks.doAction("plugin:deactivate", name);
         console.log(`[plugin-loader] "${name}" деактивовано`);
