@@ -9,6 +9,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@coudycode/agent-core": "*",
     "@coudycode/ai": "*",
     "@coudycode/core": "*"
   },

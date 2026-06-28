@@ -28,6 +28,7 @@ import {
   sessionStatus,
   waitForArmed,
 } from "./auth/oauth-sessions.js";
+import { SessionManager } from "./sessions.js";
 
 export interface CoudyServerOptions {
   port?: number;
@@ -46,6 +47,8 @@ export class CoudyServer {
   private readonly auth = new AuthStorage();
   // Сховище визначень кастомних провайдерів (models.json).
   private readonly providerDefs = new ProviderDefinitions();
+  // Менеджер сесій (agent-core JSONL).
+  private readonly sessions = new SessionManager();
 
   constructor(opts: CoudyServerOptions) {
     this.hooks = new HookEngine();
@@ -107,7 +110,7 @@ export class CoudyServer {
 
     // CORS — фронтенд (Vite) живе на іншому порті.
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
     if (method === "OPTIONS") {
       res.writeHead(204);
@@ -363,6 +366,65 @@ export class CoudyServer {
         this.providerDefs.remove(id);
       } else {
         this.auth.remove(id);
+      }
+      this.sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    // === Сесії (agent-core JSONL) ===
+
+    // GET /api/sessions — список усіх сесій (метадані, без messages).
+    if (method === "GET" && pathname === "/api/sessions") {
+      this.sendJson(res, 200, { sessions: await this.sessions.list() });
+      return;
+    }
+
+    // POST /api/sessions — створити нову сесію (UUID id).
+    if (method === "POST" && pathname === "/api/sessions") {
+      const body = await this.readJsonBody(req);
+      const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : undefined;
+      this.sendJson(res, 200, await this.sessions.create(name));
+      return;
+    }
+
+    // GET /api/sessions/:id — повна сесія (messages).
+    const sessionGetMatch = /^\/api\/sessions\/([^/]+)$/.exec(pathname);
+    if (method === "GET" && sessionGetMatch) {
+      const id = decodeURIComponent(sessionGetMatch[1]);
+      const session = await this.sessions.get(id);
+      if (!session) {
+        this.sendJson(res, 404, { error: "Сесію не знайдено" });
+        return;
+      }
+      this.sendJson(res, 200, session);
+      return;
+    }
+
+    // PATCH /api/sessions/:id — перейменувати.
+    if (method === "PATCH" && sessionGetMatch) {
+      const id = decodeURIComponent(sessionGetMatch[1]);
+      const body = await this.readJsonBody(req);
+      const name = typeof body?.name === "string" ? body.name.trim() : null;
+      if (!name) {
+        this.sendJson(res, 400, { error: "Потрібне поле name" });
+        return;
+      }
+      const session = await this.sessions.rename(id, name);
+      if (!session) {
+        this.sendJson(res, 404, { error: "Сесію не знайдено" });
+        return;
+      }
+      this.sendJson(res, 200, session);
+      return;
+    }
+
+    // DELETE /api/sessions/:id — видалити.
+    if (method === "DELETE" && sessionGetMatch) {
+      const id = decodeURIComponent(sessionGetMatch[1]);
+      const ok = await this.sessions.delete(id);
+      if (!ok) {
+        this.sendJson(res, 404, { error: "Сесію не знайдено" });
+        return;
       }
       this.sendJson(res, 200, { ok: true });
       return;
