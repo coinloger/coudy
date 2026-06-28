@@ -29,7 +29,7 @@ import {
   waitForArmed,
 } from "./auth/oauth-sessions.js";
 import { SessionManager } from "./sessions.js";
-import { handleChat } from "./chat.js";
+import { handleChat, handleCompact } from "./chat.js";
 
 export interface CoudyServerOptions {
   port?: number;
@@ -462,6 +462,26 @@ export class CoudyServer {
         return;
       }
       this.sendJson(res, 200, updated);
+      return;
+    }
+
+    // POST /api/sessions/:id/compact — SSE компактація контексту.
+    const sessionCompactMatch = /^\/api\/sessions\/([^/]+)\/compact$/.exec(pathname);
+    if (method === "POST" && sessionCompactMatch) {
+      const id = decodeURIComponent(sessionCompactMatch[1]);
+      const body = await this.readJsonBody(req);
+      const sessionFull = await this.sessions.get(id);
+      const sessionModel = sessionFull?.model;
+      await handleCompact(
+        req,
+        res,
+        body as { customInstructions?: unknown },
+        this.sessions,
+        this.auth,
+        this.providerDefs,
+        sessionModel ? { provider: sessionModel.provider, modelId: sessionModel.modelId } : null,
+        process.cwd(),
+      );
       return;
     }
 

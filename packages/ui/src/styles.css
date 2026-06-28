@@ -456,6 +456,35 @@
 	word-break: break-word;
 }
 
+/* === Compaction notice === */
+.cc-ui-compaction-notice {
+	margin: 0.5rem 0;
+	padding: 0.5rem 0.8rem;
+	border: 1px dashed var(--pi-border-muted, #b0b0b0);
+	border-radius: 0.4rem;
+	background: var(--pi-page-bg, #f8f8f8);
+	color: var(--pi-text-muted, #6c6c6c);
+	font-size: 0.76rem;
+	text-align: center;
+}
+.cc-ui-compaction-notice details {
+	margin-top: 0.3rem;
+	text-align: left;
+}
+.cc-ui-compaction-notice summary {
+	cursor: pointer;
+	font-style: italic;
+}
+.cc-ui-compaction-summary {
+	margin-top: 0.35rem;
+	padding: 0.5rem;
+	background: var(--pi-card-bg, #fff);
+	border-radius: 0.3rem;
+	white-space: pre-wrap;
+	font-size: 0.74rem;
+	color: var(--pi-text, #1f2328);
+}
+
 /*working indicator*/
 .cc-ui-working {
 	display: inline-flex;

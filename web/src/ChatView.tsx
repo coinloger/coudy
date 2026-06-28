@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, Square, Gauge } from "lucide-react";
+import { Send, Square, Gauge, Layers } from "lucide-react";
 import type { AgentEvent, AgentMessage } from "@coudycode/agent-core";
 import {
 	ConversationView,
@@ -141,6 +141,12 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 			void refreshSessionMeta();
 			return;
 		}
+		// session_compact (від AgentHarness): оновити сесію (compactionSummary зʾявиться з історії).
+		// @ts-expect-error — session_compact є AgentHarnessEvent, не базовий AgentEvent на клієнті.
+		if (event.type === "session_compact") {
+			void loadSession();
+			return;
+		}
 		// @ts-expect-error — error-подія не частина AgentEvent-юніону (бекенд додає {type:"error"}).
 		if (event.type === "error" && typeof (event as { message?: string }).message === "string") {
 			setError((event as { message: string }).message);
@@ -189,6 +195,57 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 		abortRef.current?.abort();
 	};
 
+	/** Ручна компактація: POST /api/sessions/:id/compact (SSE) → оновити сесію. */
+	const handleCompact = (): void => {
+		if (running) return;
+		setRunning(true);
+		const controller = new AbortController();
+		abortRef.current = controller;
+		fetch(`/api/sessions/${encodeURIComponent(sessionId)}/compact`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({}),
+			signal: controller.signal,
+		})
+			.then((r) => {
+				if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
+				const reader = r.body.getReader();
+				const decoder = new TextDecoder();
+				let buffer = "";
+				const pump = (): Promise<void> =>
+					reader.read().then(({ done, value }) => {
+						if (done) return;
+						buffer += decoder.decode(value, { stream: true });
+						let idx;
+						while ((idx = buffer.indexOf("\n\n")) !== -1) {
+							const block = buffer.slice(0, idx);
+							buffer = buffer.slice(idx + 2);
+							for (const line of block.split("\n")) {
+								if (!line.startsWith("data: ")) continue;
+								try {
+									const ev = JSON.parse(line.slice(6));
+									if (ev.type === "session_compact") {
+										void refreshSessionMeta();
+										void loadSession();
+									} else if (ev.type === "error") {
+										setError(ev.message);
+									}
+								} catch {
+									/* ignore */
+								}
+							}
+						}
+						return pump();
+					});
+				return pump();
+			})
+			.catch(() => undefined)
+			.finally(() => {
+				setRunning(false);
+				abortRef.current = null;
+			});
+	};
+
 	const handleSubmit = (e: React.FormEvent): void => {
 		e.preventDefault();
 		const message = input.trim();
@@ -216,6 +273,15 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 						/>
 					)}
 					{contextUsage && <ContextGauge usage={contextUsage} />}
+					<button
+						type="button"
+						className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
+						onClick={handleCompact}
+						disabled={running}
+						title="Стиснути контекст"
+					>
+						<Layers size={13} /> Compact
+					</button>
 				</div>
 			</div>
 

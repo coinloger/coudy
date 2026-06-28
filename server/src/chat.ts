@@ -1,16 +1,24 @@
 /**
- * SSE-хендлер /api/chat: запускає реальний агент (model + auth + tools + session)
- * і стрімить AgentEvent. Зберігає оновлену сесію після завершення.
+ * SSE-хендлери /api/chat та /api/sessions/:id/compact:
+ * запускають AgentHarness (model + auth + tools + session) і стрімять AgentHarnessEvent.
+ * AgentHarness автоматично персистить повідомлення + CompactionEntry у session JSONL.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { Agent } from "@coudycode/agent-core/node";
+import {
+	AgentHarness,
+	estimateContextTokens,
+	shouldCompact,
+	DEFAULT_COMPACTION_SETTINGS,
+} from "@coudycode/agent-core/node";
+import type { AgentEvent, AgentHarnessEvent } from "@coudycode/agent-core";
+import { NodeExecutionEnv } from "@coudycode/agent-core/node";
 import { getModel } from "@coudycode/ai";
-import { createAllTools } from "@coudycode/tools";
-import type { AgentMessage, AgentEvent } from "@coudycode/agent-core";
 import type { Model, Api } from "@coudycode/ai";
+import { createAllTools } from "@coudycode/tools";
+import type { Session } from "@coudycode/agent-core";
 import { SessionManager } from "./sessions.js";
 import { AuthStorage } from "./auth/auth-storage.js";
-import { ProviderDefinitions, type ApiType } from "./auth/provider-definitions.js";
+import { ProviderDefinitions } from "./auth/provider-definitions.js";
 
 const SYSTEM_PROMPT = "Ти — coudycode, корисний AI-асистент. Відповідай українською, стисло та по суті.";
 
@@ -21,7 +29,7 @@ interface ResolvedModel {
 }
 
 /**
- * Резолвити модель + auth-ключ для поточної обраної моделі.
+ * Резолвити модель + auth-ключ.
  * Пресет (built-in) → authStorage.getApiKey; кастомний (models.json) → apiKey + baseUrl.
  */
 export async function resolveModelForChat(
@@ -30,7 +38,6 @@ export async function resolveModelForChat(
 	auth: AuthStorage,
 	defs: ProviderDefinitions,
 ): Promise<ResolvedModel | { error: string }> {
-	// Кастомний провайдер (models.json) — беремо baseUrl/api/apiKey з визначення.
 	const customDef = defs.get(provider);
 	if (customDef) {
 		if (!customDef.apiKey) return { error: `Провайдер ${provider}: немає збереженого ключа` };
@@ -49,7 +56,6 @@ export async function resolveModelForChat(
 		return { model, apiKey: customDef.apiKey };
 	}
 
-	// Built-in пресет — модель з каталогу + ключ з auth (або env).
 	const catalogModel = getModel(provider as never, modelId as never) as Model<Api> | undefined;
 	if (!catalogModel) return { error: `Модель ${provider}/${modelId} не знайдена в каталозі` };
 	const apiKey = await auth.getApiKey(provider);
@@ -57,7 +63,45 @@ export async function resolveModelForChat(
 	return { model: catalogModel, apiKey };
 }
 
-/** Запустити чат: SSE-стрім AgentEvent + збереження сесії. */
+/** Створити AgentHarness для сесії з резолвленою моделлю + auth + tools. */
+function createHarness(
+	resolved: ResolvedModel,
+	session: Session,
+	cwd: string,
+): AgentHarness {
+	const env = new NodeExecutionEnv({ cwd });
+	const tools = createAllTools(cwd);
+	return new AgentHarness({
+		env,
+		session,
+		model: resolved.model,
+		tools: tools as never,
+		systemPrompt: SYSTEM_PROMPT,
+		thinkingLevel: "off",
+		getApiKeyAndHeaders: async () => ({ apiKey: resolved.apiKey }),
+	});
+}
+
+/** Встановити SSE-заголовки. */
+function initSSE(res: ServerResponse): void {
+	res.writeHead(200, {
+		"Content-Type": "text/event-stream",
+		"Cache-Control": "no-cache",
+		Connection: "keep-alive",
+		"Access-Control-Allow-Origin": "*",
+	});
+}
+
+/** Записати SSE-подію. */
+function writeSSE(res: ServerResponse, event: unknown): void {
+	try {
+		res.write(`data: ${JSON.stringify(event)}\n\n`);
+	} catch {
+		/* зʼєднання могло закритись */
+	}
+}
+
+/** /api/chat: prompt → стрім AgentEvent → авто-compact при наближенні до ліміту. */
 export async function handleChat(
 	req: IncomingMessage,
 	res: ServerResponse,
@@ -68,13 +112,7 @@ export async function handleChat(
 	currentModel: { provider: string; modelId: string } | null,
 	cwd: string,
 ): Promise<void> {
-	// SSE-заголовки.
-	res.writeHead(200, {
-		"Content-Type": "text/event-stream",
-		"Cache-Control": "no-cache",
-		Connection: "keep-alive",
-		"Access-Control-Allow-Origin": "*",
-	});
+	initSSE(res);
 
 	const sessionId = typeof body.sessionId === "string" ? body.sessionId : null;
 	const message = typeof body.message === "string" ? body.message.trim() : null;
@@ -85,15 +123,13 @@ export async function handleChat(
 		return;
 	}
 
-	// Завантажити повідомлення сесії.
-	const existing = await sessions.getMessages(sessionId);
-	if (existing === null) {
+	const opened = await sessions.openSession(sessionId);
+	if (!opened) {
 		writeSSE(res, { type: "error", message: "Сесію не знайдено" });
 		res.end();
 		return;
 	}
 
-	// Резолвити модель + ключ (модель — з сесії; null = не обрана).
 	if (!currentModel) {
 		writeSSE(res, { type: "error", message: "Оберіть модель у чаті (або підключіть провайдера в Налаштуваннях)" });
 		res.end();
@@ -106,39 +142,18 @@ export async function handleChat(
 		return;
 	}
 
-	// НЕ додаємо user-повідомлення вручну — агент додасть його через prompt()
-	// і ми збережемо нові повідомлення (user + assistant) одним блоком після agent_end.
-	const startCount = existing.length;
+	const harness = createHarness(resolved, opened.session, cwd);
 
-	// Створити агента (messages = лише існуюча історія; user додається через prompt).
-	const tools = createAllTools(cwd);
-	const agent = new Agent({
-		initialState: {
-			systemPrompt: SYSTEM_PROMPT,
-			model: resolved.model,
-			thinkingLevel: "off",
-			tools: tools as never,
-			messages: existing,
-		},
-		getApiKey: async () => resolved.apiKey,
-	});
-
-	// Скасування при disconnect клієнта.
-	const abortController = new AbortController();
+	// Скасування при disconnect.
 	const onClose = (): void => {
-		abortController.abort();
-		try {
-			agent.abort();
-		} catch {
-			/* ignore */
-		}
+		void harness.abort().catch(() => undefined);
 	};
 	req.on("close", onClose);
 
-	// Стрімити події.
+	// Стрімити всі події (включно session_compact при авто-compact).
 	let unsub: (() => void) | undefined;
 	const finished = new Promise<void>((resolve) => {
-		unsub = agent.subscribe((event: AgentEvent) => {
+		unsub = harness.subscribe((event: AgentHarnessEvent) => {
 			writeSSE(res, event);
 			if (event.type === "agent_end") {
 				resolve();
@@ -148,7 +163,7 @@ export async function handleChat(
 
 	let promptError: unknown = null;
 	try {
-		await agent.prompt(message);
+		await harness.prompt(message);
 	} catch (err) {
 		promptError = err;
 	}
@@ -157,13 +172,20 @@ export async function handleChat(
 	unsub?.();
 	req.off("close", onClose);
 
-	// Зберегти нові повідомлення (assistant + tool results) у сесію.
-	if (promptError === null && !abortController.signal.aborted) {
-		const finalMessages = agent.state.messages;
-		for (let i = startCount; i < finalMessages.length; i++) {
-			await sessions.appendMessage(sessionId, finalMessages[i]);
+	// Авто-compact при наближенні до ліміту (зберігається автоматично, стрімить session_compact).
+	if (promptError === null) {
+		try {
+			const ctx = await opened.session.buildContext();
+			const { tokens } = estimateContextTokens(ctx.messages);
+			if (shouldCompact(tokens, resolved.model.contextWindow, DEFAULT_COMPACTION_SETTINGS)) {
+				const autoUnsub = harness.subscribe((event: AgentHarnessEvent) => writeSSE(res, event));
+				await harness.compact();
+				autoUnsub();
+			}
+		} catch {
+			/* compact необовʼязковий */
 		}
-	} else if (promptError !== null && !abortController.signal.aborted) {
+	} else {
 		const errMsg = promptError instanceof Error ? promptError.message : String(promptError);
 		writeSSE(res, { type: "error", message: errMsg });
 	}
@@ -171,11 +193,62 @@ export async function handleChat(
 	res.end();
 }
 
-/** Записати SSE-подію. */
-function writeSSE(res: ServerResponse, event: unknown): void {
-	try {
-		res.write(`data: ${JSON.stringify(event)}\n\n`);
-	} catch {
-		/* зʼєднання могло закритись */
+/** /api/sessions/:id/compact: ручна компактація → SSE з session_compact. */
+export async function handleCompact(
+	req: IncomingMessage,
+	res: ServerResponse,
+	body: { customInstructions?: unknown },
+	sessions: SessionManager,
+	auth: AuthStorage,
+	defs: ProviderDefinitions,
+	model: { provider: string; modelId: string } | null,
+	cwd: string,
+): Promise<void> {
+	initSSE(res);
+
+	const sessionId = (() => {
+		const m = /\/api\/sessions\/([^/]+)\/compact/.exec(req.url ?? "");
+		return m ? decodeURIComponent(m[1]) : null;
+	})();
+
+	const opened = sessionId ? await sessions.openSession(sessionId) : null;
+	if (!opened || !sessionId) {
+		writeSSE(res, { type: "error", message: "Сесію не знайдено" });
+		res.end();
+		return;
 	}
+
+	if (!model) {
+		writeSSE(res, { type: "error", message: "Оберіть модель у чаті" });
+		res.end();
+		return;
+	}
+	const resolved = await resolveModelForChat(model.provider, model.modelId, auth, defs);
+	if ("error" in resolved) {
+		writeSSE(res, { type: "error", message: resolved.error });
+		res.end();
+		return;
+	}
+
+	const harness = createHarness(resolved, opened.session, cwd);
+	const customInstructions =
+		typeof body.customInstructions === "string" ? body.customInstructions : undefined;
+
+	const onClose = (): void => {
+		void harness.abort().catch(() => undefined);
+	};
+	req.on("close", onClose);
+
+	const unsub = harness.subscribe((event: AgentHarnessEvent) => writeSSE(res, event));
+
+	try {
+		await harness.compact(customInstructions);
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		writeSSE(res, { type: "error", message: msg });
+	}
+
+	unsub();
+	req.off("close", onClose);
+	res.end();
 }

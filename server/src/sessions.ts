@@ -174,6 +174,21 @@ export class SessionManager {
 		return true;
 	}
 
+	/**
+	 * Відкрити сесію як обʼєкт Session (agent-core) — для AgentHarness.
+	 * Повертає { session, messages } або null, якщо сесії нема.
+	 */
+	async openSession(id: string): Promise<{
+		session: Awaited<ReturnType<JsonlSessionRepo["open"]>>;
+		messages: AgentMessage[];
+	} | null> {
+		const meta = await this.findMeta(id);
+		if (!meta) return null;
+		const session = await this.repo.open(meta);
+		const ctx = await session.buildContext();
+		return { session, messages: ctx.messages };
+	}
+
 	/** Знайти метадані за id (list + фільтр). */
 	private async findMeta(id: string): Promise<JsonlSessionMetadata | undefined> {
 		const metas = await this.repo.list({});

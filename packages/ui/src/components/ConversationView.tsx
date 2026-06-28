@@ -86,7 +86,23 @@ export function ConversationView({
 						</div>
 					);
 				}
-				// Кастомні агентні ролі (bashExecution, custom, branchSummary, compactionSummary) — заглушка.
+				// compactionSummary / branchSummary — системний notice.
+				if (role === "compactionSummary" || role === "branchSummary") {
+					const sm = m as { summary?: string; tokensBefore?: number };
+					return (
+						<div key={idx} className="cc-ui-compaction-notice" role="status">
+							{role === "compactionSummary" ? "Контекст скомпаковано" : "Гілку узагальнено"}
+							{typeof sm.tokensBefore === "number" ? ` (${sm.tokensBefore} токенів → summary)` : ""}
+							{sm.summary ? (
+								<details>
+									<summary>показати summary</summary>
+									<div className="cc-ui-compaction-summary">{sm.summary}</div>
+								</details>
+							) : null}
+						</div>
+					);
+				}
+				// Інші кастомні агентні ролі — заглушка.
 				return (
 					<div key={idx} className="cc-ui-msg cc-ui-msg-assistant">
 						<div className="cc-ui-msg-body">{renderCustom(m)}</div>
