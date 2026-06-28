@@ -49,12 +49,16 @@ export class CoudyServer {
   // Сховище визначень кастомних провайдерів (models.json).
   private readonly providerDefs = new ProviderDefinitions();
   // Менеджер сесій (agent-core JSONL).
-  private readonly sessions = new SessionManager();
+  private readonly sessions: SessionManager;
 
   constructor(opts: CoudyServerOptions) {
     this.hooks = new HookEngine();
     this.loader = new PluginLoader({ pluginsDir: opts.pluginsDir, hooks: this.hooks });
     this.port = opts.port ?? 3001;
+    this.sessions = new SessionManager({
+      resolveConnectedModel: (provider, modelId) => this.resolveConnectedModel(provider, modelId),
+      listConnectedModels: () => this.listConnectedModels(),
+    });
   }
 
   async start(): Promise<void> {
@@ -380,9 +384,13 @@ export class CoudyServer {
       return;
     }
 
-    // POST /api/chat — SSE-стрім агента (model + auth + tools + session).
+    // POST /api/chat — SSE-стрім агента (model з сесії + auth + tools + session).
     if (method === "POST" && pathname === "/api/chat") {
       const body = await this.readJsonBody(req);
+      // Модель — з сесії (per-session, персистентно в JSONL).
+      const sessionId = typeof body?.sessionId === "string" ? body.sessionId : "";
+      const sessionFull = sessionId ? await this.sessions.get(sessionId) : null;
+      const sessionModel = sessionFull?.model;
       await handleChat(
         req,
         res,
@@ -390,7 +398,9 @@ export class CoudyServer {
         this.sessions,
         this.auth,
         this.providerDefs,
-        this.currentModel,
+        sessionModel
+          ? { provider: sessionModel.provider, modelId: sessionModel.modelId }
+          : null,
         process.cwd(),
       );
       return;
@@ -432,6 +442,26 @@ export class CoudyServer {
         return;
       }
       this.sendJson(res, 200, session);
+      return;
+    }
+
+    // POST /api/sessions/:id/model — зберегти модель сесії (запис model_change).
+    const sessionModelMatch = /^\/api\/sessions\/([^/]+)\/model$/.exec(pathname);
+    if (method === "POST" && sessionModelMatch) {
+      const id = decodeURIComponent(sessionModelMatch[1]);
+      const body = await this.readJsonBody(req);
+      const provider = typeof body?.provider === "string" ? body.provider : null;
+      const modelId = typeof body?.modelId === "string" ? body.modelId : null;
+      if (!provider || !modelId) {
+        this.sendJson(res, 400, { error: "Потрібні поля provider та modelId" });
+        return;
+      }
+      const updated = await this.sessions.setModel(id, provider, modelId);
+      if (!updated) {
+        this.sendJson(res, 404, { error: "Сесію не знайдено або модель не підключено" });
+        return;
+      }
+      this.sendJson(res, 200, updated);
       return;
     }
 
@@ -501,6 +531,25 @@ export class CoudyServer {
   private providerEnvVar(provider: string): string | null {
     const keys = findEnvKeys(provider);
     return keys && keys.length > 0 ? keys[0] : null;
+  }
+
+  /** Список усіх підключених моделей (пресети + кастомні) як SessionModel[] з labels. */
+  private listConnectedModels(): { provider: string; modelId: string; label: string }[] {
+    const out: { provider: string; modelId: string; label: string }[] = [];
+    const catalog = this.buildModelCatalog();
+    for (const g of catalog.providers) {
+      for (const m of g.models as Array<{ id: string; label?: string }>) {
+        out.push({ provider: g.provider, modelId: m.id, label: m.label ?? m.id });
+      }
+    }
+    return out;
+  }
+
+  /** Резолвити підключену модель за {provider, modelId} → {provider, modelId, label} | null. */
+  private resolveConnectedModel(provider: string, modelId: string): { provider: string; modelId: string; label: string } | null {
+    const info = this.resolveModelInfo(provider, modelId);
+    if (!info) return null;
+    return { provider, modelId, label: info.label };
   }
 
   /** Моделі підключених провайдерів: пресети (auth → built-in каталог) + кастомні (models.json). */

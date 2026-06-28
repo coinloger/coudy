@@ -1,7 +1,7 @@
 /**
  * Менеджер сесій поверх agent-core JSONL-репозиторію.
  * Сесії персистяться в ~/.coudycode/sessions/ (env COUDYCODE_DIR).
- * Айді — UUIDv7 (agent-core).
+ * Айді — UUIDv7 (agent-core). Модель зберігається per-session (запис model_change).
  */
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -9,13 +9,21 @@ import { JsonlSessionRepo } from "@coudycode/agent-core";
 import type { AgentMessage, JsonlSessionMetadata } from "@coudycode/agent-core";
 import { NodeExecutionEnv } from "@coudycode/agent-core/node";
 
-/** Публічне представлення сесії (метадані + лічильник). */
+/** Модель сесії. */
+export interface SessionModel {
+	provider: string;
+	modelId: string;
+	label: string;
+}
+
+/** Публічне представлення сесії (метадані + лічильник + модель). */
 export interface SessionSummary {
 	id: string;
 	name: string | null;
 	createdAt: string;
 	updatedAt: string;
 	messageCount: number;
+	model: SessionModel | null;
 }
 
 /** Повна сесія (метадані + повідомлення). */
@@ -30,29 +38,47 @@ function getCoudyDir(): string {
 	return join(homedir(), ".coudycode");
 }
 
+/** Опції SessionManager (для резолву моделі/label з підключених). */
+export interface SessionManagerOptions {
+	/** Знайти підключену модель за {provider, modelId} → label (null якщо не підключена/невалідна). */
+	resolveConnectedModel?: (provider: string, modelId: string) => SessionModel | null;
+	/** Список усіх підключених моделей (для дефолту нової сесії). */
+	listConnectedModels?: () => SessionModel[];
+}
+
 /**
- * Менеджер сесій: тонка обгортка над JsonlSessionRepo, що повертає публічні
- * метадані (name/updatedAt/messageCount) замість внутрішніх.
+ * Менеджер сесій: обгортка над JsonlSessionRepo, що повертає публічні метадані
+ * (name/model/updatedAt/messageCount). Модель зберігається per-session (JSONL).
  */
 export class SessionManager {
 	private readonly repo: JsonlSessionRepo;
 	private readonly cwd: string;
+	private readonly resolveConnectedModel?: SessionManagerOptions["resolveConnectedModel"];
+	private readonly listConnectedModels?: SessionManagerOptions["listConnectedModels"];
 
-	constructor() {
+	constructor(options: SessionManagerOptions = {}) {
 		this.cwd = process.cwd();
 		const env = new NodeExecutionEnv({ cwd: this.cwd });
 		this.repo = new JsonlSessionRepo({ fs: env, sessionsRoot: join(getCoudyDir(), "sessions") });
+		this.resolveConnectedModel = options.resolveConnectedModel;
+		this.listConnectedModels = options.listConnectedModels;
 	}
 
-	/** Створити нову сесію (UUIDv7 id). Опц. імʼя. */
+	/** Створити нову сесію (UUIDv7 id). Опц. імʼя. Встановлює початкову модель (першу підключену). */
 	async create(name?: string): Promise<SessionSummary> {
 		const session = await this.repo.create({ cwd: this.cwd });
 		if (name) {
 			await session.appendSessionName(name);
 		}
+		// Початкова модель: перша підключена (якщо є).
+		const initial = this.listConnectedModels?.()?.[0] ?? null;
+		if (initial) {
+			await session.appendModelChange(initial.provider, initial.modelId);
+		}
 		const meta = await session.getMetadata();
 		const entries = await session.getEntries();
-		return this.summarize(meta, name ?? null, entries);
+		const ctx = await session.buildContext();
+		return this.summarize(meta, name ?? null, entries, ctx.model);
 	}
 
 	/** Список усіх сесій (без повідомлень). */
@@ -64,7 +90,8 @@ export class SessionManager {
 				const session = await this.repo.open(meta);
 				const name = await session.getSessionName();
 				const entries = await session.getEntries();
-				summaries.push(this.summarize(meta, name ?? null, entries));
+				const ctx = await session.buildContext();
+				summaries.push(this.summarize(meta, name ?? null, entries, ctx.model));
 			} catch {
 				// пошкоджену сесію пропускаємо
 			}
@@ -80,7 +107,7 @@ export class SessionManager {
 		const name = await session.getSessionName();
 		const ctx = await session.buildContext();
 		const entries = await session.getEntries();
-		return { ...this.summarize(meta, name ?? null, entries), messages: ctx.messages };
+		return { ...this.summarize(meta, name ?? null, entries, ctx.model), messages: ctx.messages };
 	}
 
 	/** Перейменувати сесію (запис session_info). */
@@ -90,7 +117,26 @@ export class SessionManager {
 		const session = await this.repo.open(meta);
 		await session.appendSessionName(name);
 		const entries = await session.getEntries();
-		return this.summarize(meta, name, entries);
+		const ctx = await session.buildContext();
+		return this.summarize(meta, name, entries, ctx.model);
+	}
+
+	/**
+	 * Зберегти модель сесії (запис model_change). Валідація: модель має бути підключеною
+	 * (через resolveConnectedModel, якщо задано). Повертає оновлений summary або null.
+	 */
+	async setModel(id: string, provider: string, modelId: string): Promise<SessionSummary | null> {
+		const meta = await this.findMeta(id);
+		if (!meta) return null;
+		if (this.resolveConnectedModel) {
+			const resolved = this.resolveConnectedModel(provider, modelId);
+			if (!resolved) return null; // не підключена / невалідна
+		}
+		const session = await this.repo.open(meta);
+		await session.appendModelChange(provider, modelId);
+		const entries = await session.getEntries();
+		const ctx = await session.buildContext();
+		return this.summarize(meta, null, entries, ctx.model);
 	}
 
 	/** Видалити сесію (і файл). */
@@ -125,11 +171,12 @@ export class SessionManager {
 		return metas.find((m) => m.id === id);
 	}
 
-	/** Привести метадані + записи до публічного summary (updatedAt = останній запис). */
+	/** Привести метадані + записи + модель до публічного summary. */
 	private summarize(
 		meta: JsonlSessionMetadata,
 		name: string | null,
 		entries: unknown[],
+		model: { provider: string; modelId: string } | null,
 	): SessionSummary {
 		const messageCount = entries.filter((e) => (e as { type?: string }).type === "message").length;
 		const last = entries[entries.length - 1] as { timestamp?: string } | undefined;
@@ -139,6 +186,14 @@ export class SessionManager {
 			createdAt: meta.createdAt,
 			updatedAt: last?.timestamp ?? meta.createdAt,
 			messageCount,
+			model: model ? this.resolveSessionModel(model.provider, model.modelId) : null,
 		};
+	}
+
+	/** Резолвити label для моделі сесії (через resolveConnectedModel або fallback на modelId). */
+	private resolveSessionModel(provider: string, modelId: string): SessionModel {
+		const resolved = this.resolveConnectedModel?.(provider, modelId);
+		if (resolved) return resolved;
+		return { provider, modelId, label: modelId };
 	}
 }

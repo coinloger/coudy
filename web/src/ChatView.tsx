@@ -20,6 +20,7 @@ interface ChatViewProps {
 interface ServerSession {
 	id: string;
 	name: string | null;
+	model: CurrentModel | null;
 	messages: AgentMessage[];
 }
 
@@ -57,6 +58,7 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 			setCommitted(s.messages ?? []);
 			setCommittedStatus({});
 			setTitle(s.name ?? "Чат");
+			setCurrentModel(s.model ?? null);
 			setLive(initialConversationState);
 			workingRef.current = initialConversationState;
 			setError(null);
@@ -70,51 +72,31 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 		void loadSession();
 	}, [loadSession]);
 
-	// Завантажити поточну модель + каталог при старті.
+	// Завантажити каталог підключених провайдерів (модель сесії приходить через loadSession).
 	useEffect(() => {
 		let cancelled = false;
-		const pModel = fetch("/api/model")
-			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-			.then((m: CurrentModel) => setCurrentModel(m))
-			.catch(() => undefined);
-		const pCatalog = fetch("/api/models")
+		void fetch("/api/models")
 			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
 			.then((data: { providers: ProviderGroup[] }) => data.providers ?? [])
-			.catch(() => [] as ProviderGroup[]);
-		// Якщо поточна модель не задана, але є підключені — обрати першу автоматично.
-		void Promise.all([pModel, pCatalog]).then(([model, catalog]) => {
-			if (cancelled) return;
-			setCatalog(catalog);
-			const m = model as CurrentModel | undefined;
-			const hasCurrent =
-				m &&
-				catalog.some((g) =>
-					g.provider === m.provider && g.models.some((mm) => mm.id === m.modelId),
-				);
-			if (hasCurrent) {
-				setCurrentModel(m);
-			} else if (catalog.length > 0) {
-				const first = catalog[0].models[0];
-				if (first) handleSelectModel(catalog[0].provider, first.id);
-			} else {
-				setCurrentModel(m ?? null);
-			}
-		});
+			.catch(() => [] as ProviderGroup[])
+			.then((catalog) => {
+				if (!cancelled) setCatalog(catalog);
+			});
 		return () => {
 			cancelled = true;
 		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
+	// Обрати модель → зберегти в сесію (POST /api/sessions/:id/model).
 	const handleSelectModel = (provider: string, modelId: string): void => {
-		void fetch("/api/model", {
+		void fetch(`/api/sessions/${encodeURIComponent(sessionId)}/model`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ provider, modelId }),
 		})
 			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-			.then((m: { label?: string }) =>
-				setCurrentModel({ provider, modelId, label: m.label ?? modelId }),
+			.then((s: { model?: CurrentModel | null }) =>
+				setCurrentModel(s.model ?? { provider, modelId, label: modelId }),
 			)
 			.catch(() => undefined);
 	};

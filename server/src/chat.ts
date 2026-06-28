@@ -65,7 +65,7 @@ export async function handleChat(
 	sessions: SessionManager,
 	auth: AuthStorage,
 	defs: ProviderDefinitions,
-	currentModel: { provider: string; modelId: string },
+	currentModel: { provider: string; modelId: string } | null,
 	cwd: string,
 ): Promise<void> {
 	// SSE-заголовки.
@@ -93,7 +93,12 @@ export async function handleChat(
 		return;
 	}
 
-	// Резолвити модель + ключ.
+	// Резолвити модель + ключ (модель — з сесії; null = не обрана).
+	if (!currentModel) {
+		writeSSE(res, { type: "error", message: "Оберіть модель у чаті (або підключіть провайдера в Налаштуваннях)" });
+		res.end();
+		return;
+	}
 	const resolved = await resolveModelForChat(currentModel.provider, currentModel.modelId, auth, defs);
 	if ("error" in resolved) {
 		writeSSE(res, { type: "error", message: resolved.error });
