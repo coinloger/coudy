@@ -3,6 +3,7 @@
  * Замінюють спецсимволи/емодзі (⏺ ✓ ✕) у tool-рендерингу.
  */
 import {
+	Archive,
 	Check,
 	ChevronDown,
 	ChevronRight,
@@ -32,6 +33,7 @@ export const TOOL_ICON: Record<string, LucideIcon> = {
 	ls: Folder,
 	fetch: Globe,
 	analyze: Sparkles,
+	compact: Archive,
 };
 
 /** Іконка за замовчуванням для невідомого типу. */

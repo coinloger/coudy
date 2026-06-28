@@ -178,6 +178,7 @@ export async function handleChat(
 			const ctx = await opened.session.buildContext();
 			const { tokens } = estimateContextTokens(ctx.messages);
 			if (shouldCompact(tokens, resolved.model.contextWindow, DEFAULT_COMPACTION_SETTINGS)) {
+				writeSSE(res, { type: "compaction_start" });
 				const autoUnsub = harness.subscribe((event: AgentHarnessEvent) => writeSSE(res, event));
 				await harness.compact();
 				autoUnsub();
@@ -240,6 +241,9 @@ export async function handleCompact(
 	req.on("close", onClose);
 
 	const unsub = harness.subscribe((event: AgentHarnessEvent) => writeSSE(res, event));
+
+	// Прогрес компактації: сповістити клієнт ДО виклику LLM (щоб чат не здавався завислим).
+	writeSSE(res, { type: "compaction_start" });
 
 	try {
 		await harness.compact(customInstructions);

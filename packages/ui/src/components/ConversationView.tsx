@@ -1,8 +1,9 @@
 import type { AgentMessage } from "@coudycode/agent-core";
-import type { AssistantMessage as AssistantMessageType, ToolResultMessage } from "@coudycode/ai";
+import type { AssistantMessage as AssistantMessageType, ToolCall as ToolCallContent, ToolResultMessage } from "@coudycode/ai";
 import { AssistantMessage, type ToolResultIndex } from "./AssistantMessage.tsx";
 import { UserMessage } from "./UserMessage.tsx";
 import { ToolResult } from "./ToolResult.tsx";
+import { ToolCall } from "./ToolCall.tsx";
 import type { ToolCallStatus } from "./ToolCall.tsx";
 
 export interface ConversationViewProps {
@@ -86,12 +87,31 @@ export function ConversationView({
 						</div>
 					);
 				}
-				// compactionSummary / branchSummary — системний notice.
-				if (role === "compactionSummary" || role === "branchSummary") {
+				// compactionSummary — рендериться як звичайний tool call «compact» (done).
+				if (role === "compactionSummary") {
+					const sm = m as { summary?: string; tokensBefore?: number };
+					const compactCall: ToolCallContent = {
+						type: "toolCall",
+						id: `compact-${idx}`,
+						name: "compact",
+						arguments: { tokensBefore: sm.tokensBefore },
+					};
+					return (
+						<div key={idx} className="cc-ui-msg cc-ui-msg-assistant">
+							<ToolCall call={compactCall} status="done">
+								{sm.summary ? (
+									<div className="cc-ui-compaction-summary">{sm.summary}</div>
+								) : undefined}
+							</ToolCall>
+						</div>
+					);
+				}
+				// branchSummary — системний notice.
+				if (role === "branchSummary") {
 					const sm = m as { summary?: string; tokensBefore?: number };
 					return (
 						<div key={idx} className="cc-ui-compaction-notice" role="status">
-							{role === "compactionSummary" ? "Контекст скомпаковано" : "Гілку узагальнено"}
+							Гілку узагальнено
 							{typeof sm.tokensBefore === "number" ? ` (${sm.tokensBefore} токенів → summary)` : ""}
 							{sm.summary ? (
 								<details>

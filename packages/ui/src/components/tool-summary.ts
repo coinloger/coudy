@@ -30,7 +30,8 @@ export type ToolActionVerb =
 	| "Finding"
 	| "Listing"
 	| "Fetching"
-	| "Analyzing";
+	| "Analyzing"
+	| "Compacting";
 
 export const TOOL_VERB: Record<string, ToolActionVerb> = {
 	read: "Reading",
@@ -42,6 +43,7 @@ export const TOOL_VERB: Record<string, ToolActionVerb> = {
 	ls: "Listing",
 	fetch: "Fetching",
 	analyze: "Analyzing",
+	compact: "Compacting",
 };
 
 /** Коротке людяне описове слово для типу (для агрегованого summary). */
@@ -65,6 +67,8 @@ function shortLabel(name: string): { singular: string; plural: string; verb: Too
 			return { singular: "fetch", plural: "fetches", verb: "Fetching" };
 		case "analyze":
 			return { singular: "analysis", plural: "analyses", verb: "Analyzing" };
+		case "compact":
+			return { singular: "compaction", plural: "compactions", verb: "Compacting" };
 		default:
 			return { singular: name, plural: name, verb: TOOL_VERB[name] ?? ("Running" as ToolActionVerb) };
 	}
@@ -112,6 +116,8 @@ export function describeToolCall(call: ToolCall): string {
 			if (count !== undefined) return `Analyzing ${count} messages${scope ? ` (${scope})` : ""}`;
 			return scope ? `Analyzing ${scope}` : "Analyzing context";
 		}
+		case "compact":
+			return "Compacting context";
 		default:
 			return call.name;
 	}
@@ -155,6 +161,10 @@ export function toolCallPreview(call: ToolCall): string {
 			const scope = strArg(a.scope);
 			if (count !== undefined) return `analyze ${count} messages`;
 			return `analyze ${scope ?? "context"}`;
+		}
+		case "compact": {
+			const tokens = numArg(a.tokensBefore);
+			return tokens !== undefined ? `Compacted ${tokens} tokens` : "compact context";
 		}
 		default:
 			return call.name;

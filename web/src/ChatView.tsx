@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Send, Square, Gauge, Layers } from "lucide-react";
 import type { AgentEvent, AgentMessage } from "@coudycode/agent-core";
+import type { ToolCall as ToolCallContent } from "@coudycode/ai";
 import {
 	ConversationView,
 	applyEvent,
 	initialConversationState,
+	ToolCall,
 	type ConversationState,
 	type ToolCallStatus,
 } from "@coudycode/ui";
@@ -14,6 +16,23 @@ import { ModelSelector, type CurrentModel, type ProviderGroup } from "./ModelSel
 
 interface ChatViewProps {
 	sessionId: string;
+}
+
+/** Стан компактації як tool call: running → done (з summary). null = не активна. */
+interface CompactionState {
+	status: "running" | "done";
+	summary?: string;
+	tokensBefore?: number;
+}
+
+/** Синтетичний tool-call «compact» для рендеру через ToolCall. */
+function makeCompactCall(state: CompactionState): ToolCallContent {
+	return {
+		type: "toolCall",
+		id: "compact-live",
+		name: "compact",
+		arguments: { tokensBefore: state.tokensBefore },
+	};
 }
 
 /** Серверна сесія (GET /api/sessions/:id). */
@@ -41,6 +60,7 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 
 	const [input, setInput] = useState("");
 	const [running, setRunning] = useState(false);
+	const [compaction, setCompaction] = useState<CompactionState | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
 	// Вибір моделі (поточна + каталог підключених провайдерів).
@@ -68,6 +88,7 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 			setContextUsage(s.contextUsage ?? null);
 			setLive(initialConversationState);
 			workingRef.current = initialConversationState;
+			setCompaction(null);
 			setError(null);
 			stickRef.current = true;
 		} catch {
@@ -145,10 +166,22 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 			void refreshSessionMeta();
 			return;
 		}
-		// session_compact (від AgentHarness): оновити сесію (compactionSummary зʾявиться з історії).
+		// session_compact (від AgentHarness): позначити tool call done + оновити сесію.
 		// @ts-expect-error — session_compact є AgentHarnessEvent, не базовий AgentEvent на клієнті.
 		if (event.type === "session_compact") {
+			const entry = (event as { compactionEntry?: { summary?: string; tokensBefore?: number } }).compactionEntry;
+			setCompaction({
+				status: "done",
+				summary: entry?.summary,
+				tokensBefore: entry?.tokensBefore,
+			});
 			void loadSession();
+			return;
+		}
+		// @ts-expect-error — compaction_start від бекенду ДО виклику LLM compact.
+		if (event.type === "compaction_start") {
+			setCompaction({ status: "running" });
+			stickRef.current = true;
 			return;
 		}
 		// @ts-expect-error — error-подія не частина AgentEvent-юніону (бекенд додає {type:"error"}).
@@ -201,8 +234,10 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 
 	/** Ручна компактація: POST /api/sessions/:id/compact (SSE) → оновити сесію. */
 	const handleCompact = (): void => {
-		if (running) return;
+		if (running || compaction) return;
+		setCompaction({ status: "running" });
 		setRunning(true);
+		stickRef.current = true;
 		const controller = new AbortController();
 		abortRef.current = controller;
 		fetch(`/api/sessions/${encodeURIComponent(sessionId)}/compact`, {
@@ -228,10 +263,18 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 								if (!line.startsWith("data: ")) continue;
 								try {
 									const ev = JSON.parse(line.slice(6));
-									if (ev.type === "session_compact") {
+									if (ev.type === "compaction_start") {
+										setCompaction({ status: "running" });
+									} else if (ev.type === "session_compact") {
+										setCompaction({
+											status: "done",
+											summary: ev.compactionEntry?.summary,
+											tokensBefore: ev.compactionEntry?.tokensBefore,
+										});
 										void refreshSessionMeta();
 										void loadSession();
 									} else if (ev.type === "error") {
+										setCompaction(null);
 										setError(ev.message);
 									}
 								} catch {
@@ -246,6 +289,7 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 			.catch(() => undefined)
 			.finally(() => {
 				setRunning(false);
+				setCompaction((prev) => (prev?.status === "done" ? prev : null));
 				abortRef.current = null;
 			});
 	};
@@ -281,7 +325,7 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 						type="button"
 						className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
 						onClick={handleCompact}
-						disabled={running}
+						disabled={running || compaction !== null}
 						title="Стиснути контекст"
 					>
 						<Layers size={13} /> Compact
@@ -296,7 +340,7 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 				style={{ background: "var(--pi-page-bg, #f8f8f8)" }}
 			>
 				<div style={{ maxWidth: 900, margin: "0 auto" }}>
-					{messages.length === 0 && !live.streamingMessage && !live.working ? (
+					{messages.length === 0 && !live.streamingMessage && !live.working && !compaction ? (
 						<div className="text-muted text-center mt-5">
 							Напишіть перше повідомлення, щоб почати розмову.
 						</div>
@@ -308,6 +352,16 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 							streamingTextIndex={live.streamingTextIndex}
 							streamingThinkingIndex={live.streamingThinkingIndex}
 						/>
+					)}
+					{/* Compaction як tool call: running (спінер) → done (success + summary peek). */}
+					{compaction && (
+						<div className="cc-ui-msg cc-ui-msg-assistant">
+							<ToolCall call={makeCompactCall(compaction)} status={compaction.status}>
+								{compaction.summary ? (
+									<div className="cc-ui-compaction-summary">{compaction.summary}</div>
+								) : undefined}
+							</ToolCall>
+						</div>
 					)}
 					{/* Standalone preloader: 3 крапки безперервно від відправки доки не пішов текст/thinking-стрім. */}
 					{live.working &&
