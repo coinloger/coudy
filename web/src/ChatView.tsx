@@ -115,9 +115,13 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 			body: JSON.stringify({ provider, modelId }),
 		})
 			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-			.then((s: { model?: CurrentModel | null }) =>
-				setCurrentModel(s.model ?? { provider, modelId, label: modelId }),
-			)
+			.then((s: {
+				model?: CurrentModel | null;
+				contextUsage?: { tokensUsed: number; contextWindow: number; pct: number } | null;
+			}) => {
+				setCurrentModel(s.model ?? { provider, modelId, label: modelId });
+				if (s.contextUsage) setContextUsage(s.contextUsage);
+			})
 			.catch(() => undefined);
 	};
 
@@ -265,6 +269,7 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 			<div className="border-bottom px-4 py-2 d-flex align-items-center justify-content-between gap-2">
 				<h6 className="mb-0 text-truncate">{title}</h6>
 				<div className="d-flex align-items-center gap-2">
+					{contextUsage && <ContextGauge usage={contextUsage} />}
 					{currentModel && (
 						<ModelSelector
 							current={currentModel}
@@ -272,7 +277,6 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 							onSelect={handleSelectModel}
 						/>
 					)}
-					{contextUsage && <ContextGauge usage={contextUsage} />}
 					<button
 						type="button"
 						className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
@@ -373,23 +377,19 @@ function formatTokens(n: number): string {
 	return String(n);
 }
 
-/** Індикатор використання контексту: токени + кольоровий бар (%). */
+/** Індикатор використання контексту: іконка + токени (без бару). */
 function ContextGauge({
 	usage,
 }: {
 	usage: { tokensUsed: number; contextWindow: number; pct: number };
 }): React.ReactNode {
 	const pct = Math.min(usage.pct, 100);
-	const level = pct >= 90 ? "danger" : pct >= 70 ? "warning" : "ok";
 	return (
 		<div className="cc-context-gauge" title={`${usage.tokensUsed} / ${usage.contextWindow} токенів (${pct.toFixed(1)}%)`}>
 			<Gauge size={13} className="cc-context-icon" />
 			<span className="cc-context-text">
 				{formatTokens(usage.tokensUsed)} / {formatTokens(usage.contextWindow)}
 			</span>
-			<div className="cc-context-bar">
-				<div className={`cc-context-bar-fill cc-context-bar-${level}`} style={{ width: `${pct}%` }} />
-			</div>
 		</div>
 	);
 }
