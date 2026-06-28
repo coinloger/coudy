@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Puzzle } from "lucide-react";
+import { Puzzle, Trash2 } from "lucide-react";
+import { reloadPlugins } from "./plugins";
 import type { ApiPlugin, ApiPluginsResponse } from "./types";
 
 export default function PluginManager(): React.ReactNode {
@@ -25,7 +26,11 @@ export default function PluginManager(): React.ReactNode {
 		void refresh();
 	}, [refresh]);
 
-	/** Увімкнути/вимкнути плагін (POST enable/disable) + рефреш списку. */
+	/**
+	 * Увімкнути/вимкнути плагін (POST enable/disable) + reconcile фронт-плагінів.
+	 * reloadPlugins() робить reconcile на фронті → useCoudyUI re-applyFilters →
+	 * сайдбар/таба/панель/action зʾявляються/зникають ЖИВО без F5.
+	 */
 	const toggle = async (plugin: ApiPlugin): Promise<void> => {
 		if (toggling[plugin.name]) return;
 		setToggling((prev) => ({ ...prev, [plugin.name]: true }));
@@ -45,12 +50,41 @@ export default function PluginManager(): React.ReactNode {
 				const j = (await res.json().catch(() => null)) as { error?: string } | null;
 				throw new Error(j?.error ?? `HTTP ${res.status}`);
 			}
-			// Синхронізуємо реальний стан з сервера.
 			await refresh();
+			// Reconcile фронт-плагінів → UI оновлюється ЖИВО.
+			await reloadPlugins();
 		} catch (e) {
 			setError(e instanceof Error ? e.message : String(e));
-			// Відкат оптимістичного стану.
 			await refresh();
+		} finally {
+			setToggling((prev) => {
+				const next = { ...prev };
+				delete next[plugin.name];
+				return next;
+			});
+		}
+	};
+
+	/** Видалити плагін (DELETE) з confirm-діалогом + reconcile. */
+	const removePlugin = async (plugin: ApiPlugin): Promise<void> => {
+		if (toggling[plugin.name]) return;
+		if (!window.confirm(`Видалити плагін «${plugin.title}»? Це видалить його файли безповоротно.`)) {
+			return;
+		}
+		setToggling((prev) => ({ ...prev, [plugin.name]: true }));
+		setError(null);
+		try {
+			const res = await fetch(`/api/plugins/${encodeURIComponent(plugin.name)}`, {
+				method: "DELETE",
+			});
+			if (!res.ok) {
+				const j = (await res.json().catch(() => null)) as { error?: string } | null;
+				throw new Error(j?.error ?? `HTTP ${res.status}`);
+			}
+			await refresh();
+			await reloadPlugins();
+		} catch (e) {
+			setError(e instanceof Error ? e.message : String(e));
 		} finally {
 			setToggling((prev) => {
 				const next = { ...prev };
@@ -118,6 +152,18 @@ export default function PluginManager(): React.ReactNode {
 											<span className={`badge ${p.active ? "bg-success" : "bg-secondary"} ms-auto`}>
 												{p.active ? "активний" : "вимкнено"}
 											</span>
+										</div>
+										{/* Видалити плагін (confirm + DELETE). */}
+										<div className="mt-2 text-end">
+											<button
+												type="button"
+												className="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1"
+												onClick={() => void removePlugin(p)}
+												disabled={busy}
+												title="Видалити плагін"
+											>
+												<Trash2 size={14} /> Видалити
+											</button>
 										</div>
 									</div>
 								</div>

@@ -16,6 +16,7 @@ import { homedir } from "node:os";
 import { createRequire } from "node:module";
 import {
   HookEngine,
+  ScopedHookEngine,
   type PluginBackendModule,
   type PluginContext,
   type PluginManifest,
@@ -168,67 +169,13 @@ class PluginStateStore {
     state.overrides[name] = enabled;
     await this.write(state);
   }
-}
 
-/**
- * Scoped HookEngine для плагіна: делегує реєстрацію (addAction/addFilter) батьківському
- * (спільному) движку, але запамʼятовує повернуті ID. doAction/applyFilters теж делегуються.
- * При deactivate — removeAll() прибирає всі реєстрації цього плагіна (і tools:register,
- * і prompt:system фільтри), тож вимкнений плагін не впливає на агента.
- */
-class ScopedHookEngine extends HookEngine {
-  private readonly parent: HookEngine;
-  private registrations: Array<{ name: string; id: string }> = [];
-
-  constructor(parent: HookEngine) {
-    super();
-    this.parent = parent;
-  }
-
-  override addAction(name: string, callback: (...args: unknown[]) => void | Promise<void>, priority = 10): string {
-    const id = this.parent.addAction(name, callback, priority);
-    this.registrations.push({ name, id });
-    return id;
-  }
-
-  override addFilter<T = unknown>(name: string, callback: (value: T, ...args: unknown[]) => T | Promise<T>, priority = 10): string {
-    const id = this.parent.addFilter<T>(name, callback, priority);
-    this.registrations.push({ name, id });
-    return id;
-  }
-
-  override doAction(name: string, ...args: unknown[]): Promise<void> {
-    return this.parent.doAction(name, ...args);
-  }
-
-  override applyFilters<T = unknown>(name: string, value: T, ...args: unknown[]): Promise<T> {
-    return this.parent.applyFilters<T>(name, value, ...args);
-  }
-
-  override has(name: string): boolean {
-    return this.parent.has(name);
-  }
-
-  override count(name: string): number {
-    return this.parent.count(name);
-  }
-
-  override removeAction(name: string, id: string): void {
-    this.parent.removeAction(name, id);
-    this.registrations = this.registrations.filter((r) => r.id !== id);
-  }
-
-  override removeFilter(name: string, id: string): void {
-    this.parent.removeFilter(name, id);
-    this.registrations = this.registrations.filter((r) => r.id !== id);
-  }
-
-  /** Bulk-remove всіх реєстрацій цього плагіна (action + filter). */
-  removeAll(): void {
-    for (const { name, id } of this.registrations) {
-      this.parent.removeAction(name, id);
-    }
-    this.registrations = [];
+  /** Прибрати override (для видалення плагіна). */
+  async removeOverride(name: string): Promise<void> {
+    const state = await this.read();
+    if (!(name in state.overrides)) return;
+    delete state.overrides[name];
+    await this.write(state);
   }
 }
 
@@ -398,6 +345,21 @@ export class PluginLoader {
     if (!plugin) return { ok: false, error: `Плагін "${name}" не знайдено` };
     await this.state.setOverride(name, false);
     return this.deactivate(name);
+  }
+
+  /** Видалити плагін: деактивувати + прибрати з registry + persisted override. Повертає dir. */
+  async remove(name: string): Promise<{ ok: true; dir: string } | { ok: false; error: string }> {
+    const plugin = this.plugins.get(name);
+    if (!plugin) return { ok: false, error: `Плагін "${name}" не знайдено` };
+    // Деактивувати (scope.removeAll + deactivate-entry).
+    const deact = await this.deactivate(name);
+    if (!deact.ok) return deact;
+    // Прибрати persisted override.
+    await this.state.removeOverride(name);
+    // Прибрати з registry.
+    this.plugins.delete(name);
+    console.log(`[plugin-loader] "${name}" видалено з registry`);
+    return { ok: true, dir: plugin.dir };
   }
 
   /** Деактивувати всі активні плагіни у зворотному порядку (graceful shutdown). */

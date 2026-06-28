@@ -5,6 +5,7 @@
 import type { PluginRegistry } from "./types";
 
 export { HookEngine, hooks } from "./hooks";
+export { ScopedHookEngine } from "./scoped-hooks";
 export { CoreHooks } from "./types";
 export type {
   PluginManifest,

@@ -11,7 +11,7 @@ import http, {
   type ServerResponse,
 } from "node:http";
 import { normalize, join } from "node:path";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, stat, rm } from "node:fs/promises";
 import { transform as esbuildTransform } from "esbuild";
 import { HookEngine } from "@coudycode/core";
 import type { HttpRoute, HttpRouteContext } from "@coudycode/core";
@@ -43,6 +43,7 @@ export class CoudyServer {
   private readonly hooks: HookEngine;
   private readonly loader: PluginLoader;
   private readonly port: number;
+  private readonly pluginsDir: string;
   private startedAt: number | null = null;
   /** Кеш скомпільованих TS/TSX-фронт-ентрі плагінів (по mtime). */
   private pluginTransformCache = new Map<string, { mtime: number; code: string }>();
@@ -58,6 +59,7 @@ export class CoudyServer {
   constructor(opts: CoudyServerOptions) {
     this.hooks = new HookEngine();
     this.loader = new PluginLoader({ pluginsDir: opts.pluginsDir, hooks: this.hooks });
+    this.pluginsDir = opts.pluginsDir;
     this.port = opts.port ?? 3001;
     this.sessions = new SessionManager({
       resolveConnectedModel: (provider, modelId) => this.resolveConnectedModel(provider, modelId),
@@ -170,6 +172,33 @@ export class CoudyServer {
         return;
       }
       this.sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    // DELETE /api/plugins/:id — видалити плагін (деактивувати + rm папки + override).
+    const pluginDeleteMatch = /^\/api\/plugins\/([^/]+)$/.exec(pathname);
+    if (method === "DELETE" && pluginDeleteMatch) {
+      const id = decodeURIComponent(pluginDeleteMatch[1]);
+      const result = await this.loader.remove(id);
+      if (!result.ok) {
+        const status = result.error.includes("не знайдено") ? 404 : 500;
+        this.sendJson(res, status, { error: result.error });
+        return;
+      }
+      // Path-traversal захист: dir має бути в межах pluginsDir.
+      const dir = normalize(result.dir);
+      const base = normalize(this.pluginsDir);
+      if (!dir.startsWith(base + "/") && dir !== base) {
+        this.sendJson(res, 403, { error: "Директорія плагіна поза межами plugins/" });
+        return;
+      }
+      try {
+        await rm(dir, { recursive: true, force: true });
+        this.sendJson(res, 200, { ok: true });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.sendJson(res, 500, { error: `Не вдалося видалити файли: ${msg}` });
+      }
       return;
     }
 

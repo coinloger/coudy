@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { hooks } from "./hooks";
-import { loadAndActivatePlugins } from "./plugins";
+import { loadAndActivatePlugins, onPluginsChanged } from "./plugins";
 import type {
   ChatPanel,
   DashboardWidget,
@@ -34,8 +34,10 @@ export interface CoudyUIDefaults {
 
 /**
  * Завантажує плагіни (вони асинхно реєструють фільтри ui:*), потім
- * застосовує applyFilters до дефолтів і кладе результат у React state,
- * щоб UI перерендерився. Запускається лише один раз при монтуванні.
+ * застосовує applyFilters до дефолтів і кладе результат у React state.
+ *
+ * Реактивність: підписується на onPluginsChanged (toggle/delete фронт-плагінів)
+ * → перевикликає applyFilters → setState → UI оновлюється ЖИВО без F5.
  */
 export function useCoudyUI(defaults: CoudyUIDefaults): CoudyUIState {
   const defaultsRef = useRef(defaults);
@@ -50,8 +52,32 @@ export function useCoudyUI(defaults: CoudyUIDefaults): CoudyUIState {
     errors: [],
   }));
 
-  useEffect(() => {
+  // Перевикликати applyFilters для всіх 6 ui-фільтрів → setState.
+  const reapply = async (errors: string[]): Promise<void> => {
     const d = defaultsRef.current;
+    const [sidebarItems, dashboardWidgets, routes, settingsTabs, chatPanels, messageActions] =
+      await Promise.all([
+        hooks.applyFilters<SidebarItem[]>("ui:sidebar-items", d.sidebarItems),
+        hooks.applyFilters<DashboardWidget[]>("ui:dashboard-widgets", d.dashboardWidgets),
+        hooks.applyFilters<Route[]>("ui:routes", d.routes),
+        hooks.applyFilters<SettingsTab[]>("ui:settings-tabs", d.settingsTabs),
+        hooks.applyFilters<ChatPanel[]>("ui:chat-panel", d.chatPanels),
+        hooks.applyFilters<MessageAction[]>("ui:message-actions", d.messageActions),
+      ]);
+    setState((prev) => ({
+      ...prev,
+      status: errors.length > 0 ? "error" : "ready",
+      sidebarItems,
+      dashboardWidgets,
+      routes,
+      settingsTabs,
+      chatPanels,
+      messageActions,
+      errors,
+    }));
+  };
+
+  useEffect(() => {
     let cancelled = false;
 
     void (async () => {
@@ -64,35 +90,18 @@ export function useCoudyUI(defaults: CoudyUIDefaults): CoudyUIState {
       } catch (e) {
         errors.push(e instanceof Error ? e.message : String(e));
       }
-
-      const [sidebarItems, dashboardWidgets, routes, settingsTabs, chatPanels, messageActions] =
-        await Promise.all([
-          hooks.applyFilters<SidebarItem[]>("ui:sidebar-items", d.sidebarItems),
-          hooks.applyFilters<DashboardWidget[]>("ui:dashboard-widgets", d.dashboardWidgets),
-          hooks.applyFilters<Route[]>("ui:routes", d.routes),
-          hooks.applyFilters<SettingsTab[]>("ui:settings-tabs", d.settingsTabs),
-          hooks.applyFilters<ChatPanel[]>("ui:chat-panel", d.chatPanels),
-          hooks.applyFilters<MessageAction[]>("ui:message-actions", d.messageActions),
-        ]);
-
-      if (!cancelled) {
-        setState({
-          status: errors.length > 0 ? "error" : "ready",
-          sidebarItems,
-          dashboardWidgets,
-          routes,
-          settingsTabs,
-          chatPanels,
-          messageActions,
-          errors,
-        });
-      }
+      if (!cancelled) await reapply(errors);
     })();
+
+    // Реактивність: при зміні плагінів (toggle/delete) → re-applyFilters → setState.
+    const unsubscribe = onPluginsChanged(() => {
+      if (!cancelled) void reapply(state.errors);
+    });
 
     return () => {
       cancelled = true;
+      unsubscribe();
     };
-    // Запуск один раз при монтуванні — defaults фіксовані.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
