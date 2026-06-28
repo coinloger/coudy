@@ -289,28 +289,6 @@ export class CoudyServer {
       return;
     }
 
-    // PATCH /api/providers/:id — оновити contextWindow усіх моделей custom-провайдера.
-    const patchProviderMatch = /^\/api\/providers\/([^/]+)$/.exec(pathname);
-    if (method === "PATCH" && patchProviderMatch) {
-      const id = decodeURIComponent(patchProviderMatch[1]);
-      const def = this.providerDefs.get(id);
-      if (!def) {
-        this.sendJson(res, 404, { error: "Провайдер не знайдено" });
-        return;
-      }
-      const body = await this.readJsonBody(req);
-      const contextWindow =
-        typeof body?.contextWindow === "number" && body.contextWindow > 0 ? body.contextWindow : null;
-      if (contextWindow === null) {
-        this.sendJson(res, 400, { error: "Потрібне поле contextWindow (число > 0)" });
-        return;
-      }
-      def.models = def.models.map((m) => ({ ...m, contextWindow }));
-      this.providerDefs.set(id, def);
-      this.sendJson(res, 200, { id, definition: this.providerDefs.getPublic(id) });
-      return;
-    }
-
     // POST /api/providers/:id/models/fetch — отримати моделі з {baseUrl}/v1/models.
     const fetchMatch = /^\/api\/providers\/([^/]+)\/models\/fetch$/.exec(pathname);
     if (method === "POST" && fetchMatch) {
