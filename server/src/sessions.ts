@@ -5,7 +5,7 @@
  */
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { JsonlSessionRepo } from "@coudycode/agent-core";
+import { JsonlSessionRepo, estimateContextTokens } from "@coudycode/agent-core";
 import type { AgentMessage, JsonlSessionMetadata } from "@coudycode/agent-core";
 import { NodeExecutionEnv } from "@coudycode/agent-core/node";
 
@@ -14,9 +14,17 @@ export interface SessionModel {
 	provider: string;
 	modelId: string;
 	label: string;
+	contextWindow: number;
 }
 
-/** Публічне представлення сесії (метадані + лічильник + модель). */
+/** Використання контекстного вікна. */
+export interface ContextUsage {
+	tokensUsed: number;
+	contextWindow: number;
+	pct: number;
+}
+
+/** Публічне представлення сесії (метадані + лічильник + модель + контекст). */
 export interface SessionSummary {
 	id: string;
 	name: string | null;
@@ -24,6 +32,7 @@ export interface SessionSummary {
 	updatedAt: string;
 	messageCount: number;
 	model: SessionModel | null;
+	contextUsage: ContextUsage | null;
 }
 
 /** Повна сесія (метадані + повідомлення). */
@@ -38,9 +47,9 @@ function getCoudyDir(): string {
 	return join(homedir(), ".coudycode");
 }
 
-/** Опції SessionManager (для резолву моделі/label з підключених). */
+	/** Опції SessionManager (для резолву моделі/label з підключених). */
 export interface SessionManagerOptions {
-	/** Знайти підключену модель за {provider, modelId} → label (null якщо не підключена/невалідна). */
+	/** Знайти підключену модель за {provider, modelId} → SessionModel (null якщо не підключена/невалідна). */
 	resolveConnectedModel?: (provider: string, modelId: string) => SessionModel | null;
 	/** Список усіх підключених моделей (для дефолту нової сесії). */
 	listConnectedModels?: () => SessionModel[];
@@ -78,7 +87,7 @@ export class SessionManager {
 		const meta = await session.getMetadata();
 		const entries = await session.getEntries();
 		const ctx = await session.buildContext();
-		return this.summarize(meta, name ?? null, entries, ctx.model);
+		return this.summarize(meta, name ?? null, entries, ctx.model, ctx.messages);
 	}
 
 	/** Список усіх сесій (без повідомлень). */
@@ -91,7 +100,7 @@ export class SessionManager {
 				const name = await session.getSessionName();
 				const entries = await session.getEntries();
 				const ctx = await session.buildContext();
-				summaries.push(this.summarize(meta, name ?? null, entries, ctx.model));
+				summaries.push(this.summarize(meta, name ?? null, entries, ctx.model, ctx.messages));
 			} catch {
 				// пошкоджену сесію пропускаємо
 			}
@@ -107,7 +116,7 @@ export class SessionManager {
 		const name = await session.getSessionName();
 		const ctx = await session.buildContext();
 		const entries = await session.getEntries();
-		return { ...this.summarize(meta, name ?? null, entries, ctx.model), messages: ctx.messages };
+		return { ...this.summarize(meta, name ?? null, entries, ctx.model, ctx.messages), messages: ctx.messages };
 	}
 
 	/** Перейменувати сесію (запис session_info). */
@@ -118,7 +127,7 @@ export class SessionManager {
 		await session.appendSessionName(name);
 		const entries = await session.getEntries();
 		const ctx = await session.buildContext();
-		return this.summarize(meta, name, entries, ctx.model);
+		return this.summarize(meta, name, entries, ctx.model, ctx.model ? ctx.messages : []);
 	}
 
 	/**
@@ -136,7 +145,7 @@ export class SessionManager {
 		await session.appendModelChange(provider, modelId);
 		const entries = await session.getEntries();
 		const ctx = await session.buildContext();
-		return this.summarize(meta, null, entries, ctx.model);
+		return this.summarize(meta, null, entries, ctx.model, ctx.messages);
 	}
 
 	/** Видалити сесію (і файл). */
@@ -171,29 +180,44 @@ export class SessionManager {
 		return metas.find((m) => m.id === id);
 	}
 
-	/** Привести метадані + записи + модель до публічного summary. */
+	/** Привести метадані + записи + модель + повідомлення до публічного summary. */
 	private summarize(
 		meta: JsonlSessionMetadata,
 		name: string | null,
 		entries: unknown[],
 		model: { provider: string; modelId: string } | null,
+		messages: AgentMessage[],
 	): SessionSummary {
 		const messageCount = entries.filter((e) => (e as { type?: string }).type === "message").length;
 		const last = entries[entries.length - 1] as { timestamp?: string } | undefined;
+		const sessionModel = model ? this.resolveSessionModel(model.provider, model.modelId) : null;
 		return {
 			id: meta.id,
 			name,
 			createdAt: meta.createdAt,
 			updatedAt: last?.timestamp ?? meta.createdAt,
 			messageCount,
-			model: model ? this.resolveSessionModel(model.provider, model.modelId) : null,
+			model: sessionModel,
+			contextUsage: this.computeContextUsage(messages, sessionModel),
 		};
+	}
+
+	/** Обчислити використання контексту: tokens/contextWindow. */
+	private computeContextUsage(messages: AgentMessage[], model: SessionModel | null): ContextUsage | null {
+		try {
+			const { tokens } = estimateContextTokens(messages);
+			const contextWindow = model?.contextWindow ?? 128000;
+			const pct = contextWindow > 0 ? (tokens / contextWindow) * 100 : 0;
+			return { tokensUsed: tokens, contextWindow, pct };
+		} catch {
+			return null;
+		}
 	}
 
 	/** Резолвити label для моделі сесії (через resolveConnectedModel або fallback на modelId). */
 	private resolveSessionModel(provider: string, modelId: string): SessionModel {
 		const resolved = this.resolveConnectedModel?.(provider, modelId);
 		if (resolved) return resolved;
-		return { provider, modelId, label: modelId };
+		return { provider, modelId, label: modelId, contextWindow: 128000 };
 	}
 }

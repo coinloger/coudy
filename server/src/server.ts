@@ -534,22 +534,22 @@ export class CoudyServer {
   }
 
   /** Список усіх підключених моделей (пресети + кастомні) як SessionModel[] з labels. */
-  private listConnectedModels(): { provider: string; modelId: string; label: string }[] {
-    const out: { provider: string; modelId: string; label: string }[] = [];
+  private listConnectedModels(): { provider: string; modelId: string; label: string; contextWindow: number }[] {
+    const out: { provider: string; modelId: string; label: string; contextWindow: number }[] = [];
     const catalog = this.buildModelCatalog();
     for (const g of catalog.providers) {
-      for (const m of g.models as Array<{ id: string; label?: string }>) {
-        out.push({ provider: g.provider, modelId: m.id, label: m.label ?? m.id });
+      for (const m of g.models as Array<{ id: string; label?: string; contextWindow: number }>) {
+        out.push({ provider: g.provider, modelId: m.id, label: m.label ?? m.id, contextWindow: m.contextWindow });
       }
     }
     return out;
   }
 
   /** Резолвити підключену модель за {provider, modelId} → {provider, modelId, label} | null. */
-  private resolveConnectedModel(provider: string, modelId: string): { provider: string; modelId: string; label: string } | null {
+  private resolveConnectedModel(provider: string, modelId: string): { provider: string; modelId: string; label: string; contextWindow: number } | null {
     const info = this.resolveModelInfo(provider, modelId);
     if (!info) return null;
-    return { provider, modelId, label: info.label };
+    return { provider, modelId, label: info.label, contextWindow: info.contextWindow };
   }
 
   /** Моделі підключених провайдерів: пресети (auth → built-in каталог) + кастомні (models.json). */

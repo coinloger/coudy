@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, Square } from "lucide-react";
+import { Send, Square, Gauge } from "lucide-react";
 import type { AgentEvent, AgentMessage } from "@coudycode/agent-core";
 import {
 	ConversationView,
@@ -21,6 +21,7 @@ interface ServerSession {
 	id: string;
 	name: string | null;
 	model: CurrentModel | null;
+	contextUsage: { tokensUsed: number; contextWindow: number; pct: number } | null;
 	messages: AgentMessage[];
 }
 
@@ -30,6 +31,11 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 	const [committed, setCommitted] = useState<AgentMessage[]>([]);
 	const [committedStatus, setCommittedStatus] = useState<Record<string, ToolCallStatus>>({});
 	const [title, setTitle] = useState<string>("Чат");
+	const [contextUsage, setContextUsage] = useState<{
+		tokensUsed: number;
+		contextWindow: number;
+		pct: number;
+	} | null>(null);
 	// Поточний хід (стрімиться).
 	const [live, setLive] = useState<ConversationState>(initialConversationState);
 
@@ -59,10 +65,24 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 			setCommittedStatus({});
 			setTitle(s.name ?? "Чат");
 			setCurrentModel(s.model ?? null);
+			setContextUsage(s.contextUsage ?? null);
 			setLive(initialConversationState);
 			workingRef.current = initialConversationState;
 			setError(null);
 			stickRef.current = true;
+		} catch {
+			/* ignore */
+		}
+	}, [sessionId]);
+
+	/** Оновити лише метадані сесії (contextUsage/title) після відповіді — легший рефетч. */
+	const refreshSessionMeta = useCallback(async () => {
+		try {
+			const r = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`);
+			if (!r.ok) return;
+			const s = (await r.json()) as ServerSession;
+			setContextUsage(s.contextUsage ?? null);
+			setTitle(s.name ?? "Чат");
 		} catch {
 			/* ignore */
 		}
@@ -117,6 +137,8 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 			setCommittedStatus((prev) => ({ ...prev, ...turn.toolStatus }));
 			workingRef.current = initialConversationState;
 			setLive(initialConversationState);
+			// Оновити contextUsage/title після відповіді агента.
+			void refreshSessionMeta();
 			return;
 		}
 		// @ts-expect-error — error-подія не частина AgentEvent-юніону (бекенд додає {type:"error"}).
@@ -193,6 +215,7 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 							onSelect={handleSelectModel}
 						/>
 					)}
+					{contextUsage && <ContextGauge usage={contextUsage} />}
 				</div>
 			</div>
 
@@ -272,6 +295,34 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 						</button>
 					)}
 				</form>
+			</div>
+		</div>
+	);
+}
+
+/** Форматування токенів у людський вигляд (k/M). */
+function formatTokens(n: number): string {
+	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+	if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+	return String(n);
+}
+
+/** Індикатор використання контексту: токени + кольоровий бар (%). */
+function ContextGauge({
+	usage,
+}: {
+	usage: { tokensUsed: number; contextWindow: number; pct: number };
+}): React.ReactNode {
+	const pct = Math.min(usage.pct, 100);
+	const level = pct >= 90 ? "danger" : pct >= 70 ? "warning" : "ok";
+	return (
+		<div className="cc-context-gauge" title={`${usage.tokensUsed} / ${usage.contextWindow} токенів (${pct.toFixed(1)}%)`}>
+			<Gauge size={13} className="cc-context-icon" />
+			<span className="cc-context-text">
+				{formatTokens(usage.tokensUsed)} / {formatTokens(usage.contextWindow)}
+			</span>
+			<div className="cc-context-bar">
+				<div className={`cc-context-bar-fill cc-context-bar-${level}`} style={{ width: `${pct}%` }} />
 			</div>
 		</div>
 	);
