@@ -234,8 +234,10 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 							streamingThinkingIndex={live.streamingThinkingIndex}
 						/>
 					)}
-					{/* Standalone preloader: 3 крапки одразу при відправці (до першого токена). */}
-					{live.working && !live.streamingMessage && (
+					{/* Standalone preloader: 3 крапки безперервно від відправки доки не пішов текст/thinking-стрім. */}
+					{live.working &&
+						live.streamingTextIndex === undefined &&
+						live.streamingThinkingIndex === undefined && (
 						<div className="cc-ui-msg cc-ui-msg-assistant">
 							<span className="cc-ui-streaming-dots" aria-hidden="true">
 								<span />
