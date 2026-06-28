@@ -11,6 +11,7 @@ import {
 } from "@coudycode/ui";
 import "@coudycode/ui/styles.css";
 import { streamChat } from "./chat-stream";
+import { ModelSelector, type CurrentModel, type ProviderGroup } from "./ModelSelector";
 
 interface ChatViewProps {
 	sessionId: string;
@@ -35,6 +36,10 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 	const [input, setInput] = useState("");
 	const [running, setRunning] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+
+	// Вибір моделі (поточна + каталог підключених провайдерів).
+	const [currentModel, setCurrentModel] = useState<CurrentModel | null>(null);
+	const [catalog, setCatalog] = useState<ProviderGroup[]>([]);
 
 	const workingRef = useRef<ConversationState>(initialConversationState);
 	const abortRef = useRef<AbortController | null>(null);
@@ -65,6 +70,31 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 	useEffect(() => {
 		void loadSession();
 	}, [loadSession]);
+
+	// Завантажити поточну модель + каталог при старті.
+	useEffect(() => {
+		void fetch("/api/model")
+			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+			.then((m: CurrentModel) => setCurrentModel(m))
+			.catch(() => undefined);
+		void fetch("/api/models")
+			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+			.then((data: { providers: ProviderGroup[] }) => setCatalog(data.providers ?? []))
+			.catch(() => undefined);
+	}, []);
+
+	const handleSelectModel = (provider: string, modelId: string): void => {
+		void fetch("/api/model", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ provider, modelId }),
+		})
+			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+			.then((m: { label?: string }) =>
+				setCurrentModel({ provider, modelId, label: m.label ?? modelId }),
+			)
+			.catch(() => undefined);
+	};
 
 	// Авто-скрол, якщо користувач біля низу.
 	useEffect(() => {
@@ -147,9 +177,18 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 
 	return (
 		<div className="d-flex flex-column h-100">
-			<div className="border-bottom px-4 py-2 d-flex align-items-center justify-content-between">
+			<div className="border-bottom px-4 py-2 d-flex align-items-center justify-content-between gap-2">
 				<h6 className="mb-0 text-truncate">{title}</h6>
-				{live.working && <WorkingIndicator label="Агент працює" />}
+				<div className="d-flex align-items-center gap-2">
+					{currentModel && (
+						<ModelSelector
+							current={currentModel}
+							catalog={catalog}
+							onSelect={handleSelectModel}
+						/>
+					)}
+					{live.working && <WorkingIndicator label="Агент працює" />}
+				</div>
 			</div>
 
 			<div

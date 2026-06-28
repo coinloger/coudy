@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Check, ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
-import type { ModelEntry, ProviderGroup } from "./playground/ModelSelector";
+import type { ModelEntry, ProviderGroup } from "./ModelSelector";
 import { AddProviderDialog } from "./AddProviderDialog";
 
 /** Знєднати провайдера (DELETE). */

@@ -11,7 +11,7 @@ import {
 import type { AgentEvent, AgentMessage } from "@coudycode/agent-core";
 import "@coudycode/ui/styles.css";
 import { runMockAgent, type MockSpeed } from "./mock-agent";
-import { ModelSelector, type CurrentModel, type ProviderGroup } from "./ModelSelector";
+import { ModelSelector, type CurrentModel, type ProviderGroup } from "../ModelSelector";
 
 const SPEEDS: MockSpeed[] = ["0.5x", "1x", "2x", "instant"];
 const DEFAULT_PROMPT = "Допоможи розібратись з проектом і додати фічу";
