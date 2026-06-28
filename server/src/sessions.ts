@@ -6,7 +6,7 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { JsonlSessionRepo } from "@coudycode/agent-core";
-import type { JsonlSessionMetadata } from "@coudycode/agent-core";
+import type { AgentMessage, JsonlSessionMetadata } from "@coudycode/agent-core";
 import { NodeExecutionEnv } from "@coudycode/agent-core/node";
 
 /** Публічне представлення сесії (метадані + лічильник). */
@@ -98,6 +98,24 @@ export class SessionManager {
 		const meta = await this.findMeta(id);
 		if (!meta) return false;
 		await this.repo.delete(meta);
+		return true;
+	}
+
+	/** Прочитати повідомлення сесії (AgentMessage[]). */
+	async getMessages(id: string): Promise<AgentMessage[] | null> {
+		const meta = await this.findMeta(id);
+		if (!meta) return null;
+		const session = await this.repo.open(meta);
+		const ctx = await session.buildContext();
+		return ctx.messages;
+	}
+
+	/** Додати повідомлення у сесію (зберігає у JSONL). */
+	async appendMessage(id: string, message: AgentMessage): Promise<boolean> {
+		const meta = await this.findMeta(id);
+		if (!meta) return false;
+		const session = await this.repo.open(meta);
+		await session.appendMessage(message);
 		return true;
 	}
 

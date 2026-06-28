@@ -11,7 +11,8 @@
   "dependencies": {
     "@coudycode/agent-core": "*",
     "@coudycode/ai": "*",
-    "@coudycode/core": "*"
+    "@coudycode/core": "*",
+    "@coudycode/tools": "*"
   },
   "devDependencies": {
     "@types/node": "^20.11.16",

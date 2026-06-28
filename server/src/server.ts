@@ -29,6 +29,7 @@ import {
   waitForArmed,
 } from "./auth/oauth-sessions.js";
 import { SessionManager } from "./sessions.js";
+import { handleChat } from "./chat.js";
 
 export interface CoudyServerOptions {
   port?: number;
@@ -376,6 +377,22 @@ export class CoudyServer {
     // GET /api/sessions — список усіх сесій (метадані, без messages).
     if (method === "GET" && pathname === "/api/sessions") {
       this.sendJson(res, 200, { sessions: await this.sessions.list() });
+      return;
+    }
+
+    // POST /api/chat — SSE-стрім агента (model + auth + tools + session).
+    if (method === "POST" && pathname === "/api/chat") {
+      const body = await this.readJsonBody(req);
+      await handleChat(
+        req,
+        res,
+        body as { sessionId?: unknown; message?: unknown },
+        this.sessions,
+        this.auth,
+        this.providerDefs,
+        this.currentModel,
+        process.cwd(),
+      );
       return;
     }
 
