@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { FileText, Pencil, Plus, Trash2 } from "lucide-react";
+import { Download, FileText, Pencil, Plus, Trash2 } from "lucide-react";
 import type { PromptTemplateEntry } from "./PromptSelector";
 
 interface PromptTemplatesProps {}
@@ -18,7 +18,9 @@ export default function PromptTemplates(_props: PromptTemplatesProps): React.Rea
 	const [templates, setTemplates] = useState<PromptTemplateEntry[]>([]);
 	const [form, setForm] = useState<FormState | null>(null);
 	const [saving, setSaving] = useState(false);
+	const [seeding, setSeeding] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [notice, setNotice] = useState<string | null>(null);
 
 	const refresh = useCallback(async (): Promise<void> => {
 		try {
@@ -83,6 +85,30 @@ export default function PromptTemplates(_props: PromptTemplatesProps): React.Rea
 		}
 	};
 
+	const handleSeed = async (): Promise<void> => {
+		setSeeding(true);
+		setError(null);
+		setNotice(null);
+		try {
+			const r = await fetch("/api/prompts/seed", { method: "POST" });
+			if (!r.ok) {
+				const j = (await r.json().catch(() => null)) as { error?: string } | null;
+				throw new Error(j?.error ?? `HTTP ${r.status}`);
+			}
+			const data = (await r.json()) as { added: number };
+			setNotice(
+				data.added > 0
+					? `Додано ${data.added} шаблонів`
+					: "Усі стандартні шаблони вже присутні",
+			);
+			await refresh();
+		} catch (e) {
+			setError(e instanceof Error ? e.message : String(e));
+		} finally {
+			setSeeding(false);
+		}
+	};
+
 	const startEdit = (t: PromptTemplateEntry): void => {
 		setForm({ id: t.id, name: t.name, content: t.content });
 		setError(null);
@@ -93,17 +119,34 @@ export default function PromptTemplates(_props: PromptTemplatesProps): React.Rea
 			<div className="col-md-5">
 				<div className="d-flex align-items-center justify-content-between mb-2">
 					<h6 className="mb-0">Шаблони</h6>
-					<button
-						type="button"
-						className="btn btn-sm btn-primary d-flex align-items-center gap-1"
-						onClick={() => {
-							setForm({ ...EMPTY_FORM });
-							setError(null);
-						}}
-					>
-						<Plus size={14} /> Створити
-					</button>
+					<div className="d-flex gap-2">
+						<button
+							type="button"
+							className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
+							onClick={() => void handleSeed()}
+							disabled={seeding}
+							title="Додати відсутні стандартні шаблони з pi"
+						>
+							<Download size={14} /> Завантажити стандартні
+						</button>
+						<button
+							type="button"
+							className="btn btn-sm btn-primary d-flex align-items-center gap-1"
+							onClick={() => {
+								setForm({ ...EMPTY_FORM });
+								setError(null);
+							}}
+						>
+							<Plus size={14} /> Створити
+						</button>
+					</div>
 				</div>
+				{notice && (
+					<div className="alert alert-success py-2 small mb-2 d-flex align-items-center justify-content-between">
+						<span>{notice}</span>
+						<button type="button" className="btn btn-sm btn-link p-0 lh-1" onClick={() => setNotice(null)}>×</button>
+					</div>
+				)}
 				{templates.length === 0 ? (
 					<p className="text-muted small mb-0">
 						Шаблонів ще нема. Створіть перший, щоб використовувати різні системні промпти в

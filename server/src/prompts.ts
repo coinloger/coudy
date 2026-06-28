@@ -83,7 +83,7 @@ function staticCodingPrompt(): string {
 }
 
 /** Готові шаблони з pi (засіваються при першому запуску, якщо store порожній). */
-function buildDefaultTemplates(): PromptTemplate[] {
+function getDefaultTemplates(): PromptTemplate[] {
 	return [
 		{
 			id: randomUUID(),
@@ -191,7 +191,24 @@ export class PromptTemplateStore {
 	private seedDefaultsIfEmpty(): void {
 		const data = readJson<PromptsFile>(this.path, { templates: [] });
 		if (data.templates.length > 0) return;
-		writeJson(this.path, { templates: buildDefaultTemplates() });
+		writeJson(this.path, { templates: getDefaultTemplates() });
+	}
+
+	/**
+	 * Додати відсутні дефолтні pi-шаблони (за name). НЕ затирає існуючі
+	 * (навіть відредаговані дефолти лишає як є). Повертає оновлений список.
+	 */
+	addMissingDefaults(): { added: number; templates: PromptTemplate[] } {
+		const data = readJson<PromptsFile>(this.path, { templates: [] });
+		const existing = new Set(data.templates.map((t) => t.name));
+		let added = 0;
+		for (const def of getDefaultTemplates()) {
+			if (existing.has(def.name)) continue;
+			data.templates.push({ ...def, id: randomUUID(), createdAt: new Date().toISOString() });
+			added++;
+		}
+		if (added > 0) writeJson(this.path, data);
+		return { added, templates: this.list() };
 	}
 
 	/** Усі шаблони (хронологічно по createdAt). */

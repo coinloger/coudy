@@ -481,6 +481,13 @@ export class CoudyServer {
       return;
     }
 
+    // POST /api/prompts/seed — додати відсутні дефолтні pi-шаблони (без перезапису).
+    if (method === "POST" && pathname === "/api/prompts/seed") {
+      const result = this.promptTemplates.addMissingDefaults();
+      this.sendJson(res, 200, result);
+      return;
+    }
+
     // POST /api/prompts — створити шаблон.
     if (method === "POST" && pathname === "/api/prompts") {
       const body = await this.readJsonBody(req);
