@@ -2,6 +2,7 @@
  * Спільні типи для coudycode — використовуються і на бекенді, і на фронті.
  */
 
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { HookEngine } from "./hooks";
 
 // --- Маніфест плагіна ---
@@ -93,6 +94,34 @@ export interface PluginFrontendModule {
   deactivate?: (context: PluginContext) => void | Promise<void>;
 }
 
+// --- HTTP-роути від плагінів ---
+
+/** HTTP-методи, що підтримуються плагінними роутами. */
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+/** Контекст, що передається в обробник плагінного роуту. */
+export interface HttpRouteContext {
+  req: IncomingMessage;
+  res: ServerResponse;
+  /** Надіслати JSON-відповідь із статусом. */
+  sendJson: (status: number, data: unknown) => void;
+  /** Надіслати помилку (status + message) як JSON. */
+  sendError: (status: number, message: string) => void;
+  /** Прочитати та розпарсити JSON-тіло запиту (null якщо порожнє/невалідне). */
+  readJsonBody: () => Promise<unknown>;
+}
+
+/** Обробник плагінного HTTP-роуту. */
+export type HttpRouteHandler = (ctx: HttpRouteContext) => void | Promise<void>;
+
+/** Опис плагінного HTTP-ендпоінту (точний збіг method + path). */
+export interface HttpRoute {
+  method: HttpMethod;
+  /** Точний шлях, напр. "/api/example-plugin/data". */
+  path: string;
+  handler: HttpRouteHandler;
+}
+
 // --- Хуки ядра (стандартні точки розширення) ---
 
 /**
@@ -105,6 +134,9 @@ export const CoreHooks = {
   SERVER_STOP: "server:stop",
   PLUGIN_ACTIVATE: "plugin:activate",
   PLUGIN_DEACTIVATE: "plugin:deactivate",
+
+  // Backend filters
+  SERVER_ROUTES: "server:routes", // filter — HttpRoute[] від плагінів
 
   // Agent hooks (зарезервовано для майбутнього)
   AGENT_BEFORE_PROMPT: "agent:before-prompt",

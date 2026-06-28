@@ -13,6 +13,10 @@ export type {
   PluginBackendModule,
   PluginFrontendModule,
   CoreHookName,
+  HttpMethod,
+  HttpRoute,
+  HttpRouteContext,
+  HttpRouteHandler,
 } from "./types";
 
 // Проста реалізація PluginRegistry

@@ -26,6 +26,38 @@ export function activate(ctx) {
   ctx.hooks.addFilter("prompt:system", (prompt) => {
     return `${prompt}\n[example-plugin]: додаткові інструкції від демо-плагіна.`;
   });
+
+  // --- Демонстрація HTTP-роутів (server:routes filter) ---
+  // Плагін реєструє власні ендпоінти. ctx.handler отримує { req, res, sendJson,
+  // sendError, readJsonBody }. При вимкненні плагіна (toggle) фільтр зникає
+  // зі ScopedHookEngine → роут миттєво повертає 404.
+  ctx.hooks.addFilter("server:routes", (routes) => {
+    return [
+      ...routes,
+      {
+        method: "GET",
+        path: "/api/example-plugin/info",
+        handler: ({ sendJson }) => {
+          sendJson(200, {
+            name: "example-plugin",
+            time: new Date().toISOString(),
+          });
+        },
+      },
+      {
+        method: "POST",
+        path: "/api/example-plugin/echo",
+        handler: async ({ sendJson, sendError, readJsonBody }) => {
+          const body = await readJsonBody();
+          if (!body || typeof body !== "object") {
+            sendError(400, "Потрібне JSON-тіло");
+            return;
+          }
+          sendJson(200, { echoed: body });
+        },
+      },
+    ];
+  });
 }
 
 export function deactivate(ctx) {

@@ -13,6 +13,7 @@ import http, {
 import { normalize, join } from "node:path";
 import { readFile, stat } from "node:fs/promises";
 import { HookEngine } from "@coudycode/core";
+import type { HttpRoute, HttpRouteContext } from "@coudycode/core";
 import { findEnvKeys, getModels, getProviders } from "@coudycode/ai";
 import type { Api, Model } from "@coudycode/ai";
 import { PluginLoader } from "./plugin-loader.js";
@@ -551,6 +552,32 @@ export class CoudyServer {
         return;
       }
       this.sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    // Плагінні HTTP-роути (server:routes filter). Збіг по method + точний path.
+    // При disable плагіна його фільтр зникає (ScopedHookEngine) → роут зникає.
+    const pluginRoutes = await this.hooks.applyFilters<HttpRoute[]>("server:routes", []);
+    const route = pluginRoutes.find(
+      (r) => r.method === method && r.path === pathname,
+    );
+    if (route) {
+      try {
+        const ctx: HttpRouteContext = {
+          req,
+          res,
+          sendJson: (status: number, data: unknown): void => this.sendJson(res, status, data),
+          sendError: (status: number, message: string): void =>
+            this.sendJson(res, status, { error: message }),
+          readJsonBody: async (): Promise<unknown> => this.readJsonBody(req),
+        };
+        await route.handler(ctx);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!res.headersSent) {
+          this.sendJson(res, 500, { error: msg });
+        }
+      }
       return;
     }
 
