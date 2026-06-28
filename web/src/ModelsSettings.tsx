@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Check, ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Plus, RefreshCw, Trash2 } from "lucide-react";
 import type { ModelEntry, ProviderGroup } from "./ModelSelector";
 import { AddProviderDialog } from "./AddProviderDialog";
 
@@ -9,18 +9,36 @@ async function disconnect(id: string): Promise<boolean> {
 	return r.ok;
 }
 
+/** Оновити моделі custom-провайдера: рефетч /v1/models + /props → збереження в models.json. */
+async function refreshProvider(id: string): Promise<{ ok: boolean; error?: string }> {
+	const r = await fetch(`/api/providers/${encodeURIComponent(id)}/models/fetch`, { method: "POST" });
+	if (r.ok) return { ok: true };
+	let msg = `HTTP ${r.status}`;
+	try {
+		const j = (await r.json()) as { error?: string };
+		if (j?.error) msg = j.error;
+	} catch {
+		/* ignore */
+	}
+	return { ok: false, error: msg };
+}
+
 function ConnectedProvider({
 	group,
 	removed,
 	onRemoved,
+	onRefreshed,
 }: {
 	group: ProviderGroup;
 	removed: boolean;
 	onRemoved: (id: string) => void;
+	onRefreshed: () => void;
 }): React.ReactNode {
 	const [open, setOpen] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [refreshing, setRefreshing] = useState(false);
+	const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
 
 	const remove = (): void => {
 		setBusy(true);
@@ -29,6 +47,22 @@ function ConnectedProvider({
 			.then((ok) => (ok ? onRemoved(group.provider) : setError("Не вдалося видалити")))
 			.catch(() => setError("Не вдалося видалити"))
 			.finally(() => setBusy(false));
+	};
+
+	const refresh = (): void => {
+		setRefreshing(true);
+		setRefreshMsg(null);
+		refreshProvider(group.provider)
+			.then((r) => {
+				if (r.ok) {
+					setRefreshMsg("Моделі оновлено");
+					onRefreshed();
+				} else {
+					setRefreshMsg(`Помилка: ${r.error ?? "невідома"}`);
+				}
+			})
+			.catch(() => setRefreshMsg("Помилка: не вдалося оновити"))
+			.finally(() => setRefreshing(false));
 	};
 
 	return (
@@ -47,6 +81,17 @@ function ConnectedProvider({
 					<span className="cc-provider-status cc-provider-status-on">
 						<Check size={13} /> <span>{group.models.length} моделей</span>
 					</span>
+					{group.custom && (
+						<button
+							type="button"
+							className="btn btn-sm btn-outline-secondary"
+							onClick={refresh}
+							disabled={refreshing || busy}
+							title="Оновити моделі та contextWindow"
+						>
+							<RefreshCw size={14} className={refreshing ? "cc-spin" : ""} />
+						</button>
+					)}
 					<button
 						type="button"
 						className="btn btn-sm btn-outline-danger"
@@ -68,6 +113,7 @@ function ConnectedProvider({
 					))}
 				</ul>
 			)}
+			{refreshMsg && <div className="cc-provider-info">{refreshMsg}</div>}
 			{removed && <div className="cc-provider-success">Відʼєднано.</div>}
 			{error && <div className="cc-provider-error">{error}</div>}
 		</div>
@@ -111,6 +157,7 @@ export default function ModelsSettings(): React.ReactNode {
 							group={g}
 							removed={false}
 							onRemoved={refresh}
+							onRefreshed={refresh}
 						/>
 						))}
 					</div>

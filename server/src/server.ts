@@ -290,9 +290,34 @@ export class CoudyServer {
     }
 
     // POST /api/providers/:id/models/fetch — отримати моделі з {baseUrl}/v1/models.
+    // Два режими:
+    //   • preview (id не існує в models.json): baseUrl/apiKey/apiType з body — лише повертає.
+    //   • refresh (існуючий custom-провайдер): бере baseUrl/apiKey/api з def, РЕФЕТЧИТЬ + зберігає оновлені моделі в models.json.
     const fetchMatch = /^\/api\/providers\/([^/]+)\/models\/fetch$/.exec(pathname);
     if (method === "POST" && fetchMatch) {
+      const id = decodeURIComponent(fetchMatch[1]);
       const body = await this.readJsonBody(req);
+
+      // Refresh mode: custom-провайдер вже збережений.
+      const existing = this.providerDefs.get(id);
+      if (existing) {
+        if (!existing.apiKey) {
+          this.sendJson(res, 500, { error: "Провайдер не має apiKey для рефрешу" });
+          return;
+        }
+        const result = await fetchRemoteModels(existing.baseUrl, existing.apiKey, existing.api);
+        if (result.error) {
+          this.sendJson(res, 502, { error: result.error });
+          return;
+        }
+        // Зберегти оновлені моделі в models.json.
+        existing.models = result.models;
+        this.providerDefs.set(id, existing);
+        this.sendJson(res, 200, { models: result.models });
+        return;
+      }
+
+      // Preview mode: для AddProviderDialog (id ще не існує).
       const baseUrl = typeof body?.baseUrl === "string" ? body.baseUrl.trim() : null;
       const apiKey = typeof body?.apiKey === "string" ? body.apiKey.trim() : null;
       const apiType = body?.apiType;
