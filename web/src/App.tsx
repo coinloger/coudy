@@ -60,8 +60,8 @@ export default function App(): React.ReactNode {
     navigate(`/chat/${id}`);
   };
 
-  const handleCreateSession = (): void => {
-    const id = sessions.createSession();
+  const handleCreateSession = async (): Promise<void> => {
+    const id = await sessions.createSession();
     navigate(`/chat/${id}`);
   };
 
