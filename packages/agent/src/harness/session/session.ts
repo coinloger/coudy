@@ -79,6 +79,40 @@ export function buildSessionContext(pathEntries: SessionTreeEntry[]): SessionCon
 	return { messages, thinkingLevel, model, activeToolNames };
 }
 
+/**
+ * Хронологічний порядок повідомлень для UI (display): всі записи обходяться у
+ * реальному порядку — compaction/branch_summary на своїй позиції (НЕ згори).
+ * На відміну від buildSessionContext (LLM порядок), тут видно ВСЮ історію
+ * (включно зі стиснутими повідомленнями) з compaction у момент стискання.
+ */
+export function buildDisplayMessages(pathEntries: SessionTreeEntry[]): AgentMessage[] {
+	const messages: AgentMessage[] = [];
+	for (const entry of pathEntries) {
+		if (entry.type === "message") {
+			messages.push(entry.message as AgentMessage);
+		} else if (entry.type === "custom_message") {
+			messages.push(
+				createCustomMessage(
+					entry.customType,
+					entry.content as string | (TextContent | ImageContent)[],
+					entry.display,
+					entry.details,
+					entry.timestamp,
+				),
+			);
+		} else if (entry.type === "compaction") {
+			messages.push(
+				createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp),
+			);
+		} else if (entry.type === "branch_summary" && entry.summary) {
+			messages.push(createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp));
+		}
+		// Інші записи (model_change, thinking_level_change, active_tools_change,
+		// label, session_info) — пропускаємо: не відображаються як повідомлення.
+	}
+	return messages;
+}
+
 export class Session<TMetadata extends SessionMetadata = SessionMetadata> {
 	private storage: SessionStorage<TMetadata>;
 

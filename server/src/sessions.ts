@@ -5,7 +5,7 @@
  */
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { JsonlSessionRepo, estimateContextTokens } from "@coudycode/agent-core";
+import { JsonlSessionRepo, estimateContextTokens, buildDisplayMessages } from "@coudycode/agent-core";
 import type { AgentMessage, JsonlSessionMetadata } from "@coudycode/agent-core";
 import { NodeExecutionEnv } from "@coudycode/agent-core/node";
 
@@ -116,7 +116,10 @@ export class SessionManager {
 		const name = await session.getSessionName();
 		const ctx = await session.buildContext();
 		const entries = await session.getEntries();
-		return { ...this.summarize(meta, name ?? null, entries, ctx.model, ctx.messages), messages: ctx.messages };
+		// UI-повідомлення: хронологічний порядок (compaction на своїй позиції).
+		// ctx.messages (LLM порядок, compaction згори) лишається для підрахунку токенів.
+		const displayMessages = buildDisplayMessages(entries);
+		return { ...this.summarize(meta, name ?? null, entries, ctx.model, ctx.messages), messages: displayMessages };
 	}
 
 	/** Перейменувати сесію (запис session_info). */
