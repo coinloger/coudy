@@ -42,6 +42,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Puzzle,
   FileText,
   Star,
+  MessageSquare,
   Settings: SettingsIcon,
 };
 

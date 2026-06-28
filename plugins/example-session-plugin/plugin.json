@@ -9,6 +9,7 @@
   "permissions": ["sessions", "tools"],
   "enabled": true,
   "entry": {
-    "backend": "./backend/index.js"
+    "backend": "./backend/index.js",
+    "frontend": "./frontend/index.tsx"
   }
 }
