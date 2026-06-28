@@ -18,6 +18,16 @@ export interface PluginManifest {
   title: string;
   /** Короткий опис */
   description: string;
+  /** Автор плагіна */
+  author?: string;
+  /** URL сторінки плагіна (документація/репозиторій) */
+  homepage?: string;
+  /** Мінімальна версія ядра coudycode (semver), з якою сумісний плагін */
+  minCoreVersion?: string;
+  /** Дозволи, які вимагає плагін (напр. ["fs","network","tools"]) */
+  permissions?: string[];
+  /** Інші плагіни, від яких залежить цей (name@version або name) */
+  dependencies?: string[];
   /** Чи активований плагін (керуються динамічно) */
   enabled?: boolean;
   /** Точка входу для бекенду (відносно plugin.json) */

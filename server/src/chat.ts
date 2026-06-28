@@ -10,12 +10,13 @@ import {
 	shouldCompact,
 	DEFAULT_COMPACTION_SETTINGS,
 } from "@coudycode/agent-core/node";
-import type { AgentEvent, AgentHarnessEvent } from "@coudycode/agent-core";
+import type { AgentEvent, AgentHarnessEvent, AgentTool } from "@coudycode/agent-core";
 import { NodeExecutionEnv } from "@coudycode/agent-core/node";
 import { getModel } from "@coudycode/ai";
 import type { Model, Api } from "@coudycode/ai";
 import { createAllTools } from "@coudycode/tools";
 import type { Session } from "@coudycode/agent-core";
+import { HookEngine } from "@coudycode/core";
 import { SessionManager } from "./sessions.js";
 import { AuthStorage } from "./auth/auth-storage.js";
 import { ProviderDefinitions } from "./auth/provider-definitions.js";
@@ -64,19 +65,24 @@ export async function resolveModelForChat(
 }
 
 /** Створити AgentHarness для сесії з резолвленою моделлю + auth + tools. */
-function createHarness(
+async function createHarness(
 	resolved: ResolvedModel,
 	session: Session,
 	cwd: string,
-): AgentHarness {
+	hooks: HookEngine,
+): Promise<AgentHarness> {
 	const env = new NodeExecutionEnv({ cwd });
-	const tools = createAllTools(cwd);
+	// Базові інструменти → плагіни можуть додати свої через filter «tools:register».
+	const baseTools = createAllTools(cwd);
+	const tools = await hooks.applyFilters<AgentTool[]>("tools:register", baseTools);
+	// Системний промпт → плагіни можуть модифікувати через filter «prompt:system».
+	const systemPrompt = await hooks.applyFilters<string>("prompt:system", SYSTEM_PROMPT);
 	return new AgentHarness({
 		env,
 		session,
 		model: resolved.model,
 		tools: tools as never,
-		systemPrompt: SYSTEM_PROMPT,
+		systemPrompt,
 		thinkingLevel: "off",
 		getApiKeyAndHeaders: async () => ({ apiKey: resolved.apiKey }),
 	});
@@ -111,6 +117,7 @@ export async function handleChat(
 	defs: ProviderDefinitions,
 	currentModel: { provider: string; modelId: string } | null,
 	cwd: string,
+	hooks: HookEngine,
 ): Promise<void> {
 	initSSE(res);
 
@@ -142,7 +149,7 @@ export async function handleChat(
 		return;
 	}
 
-	const harness = createHarness(resolved, opened.session, cwd);
+	const harness = await createHarness(resolved, opened.session, cwd, hooks);
 
 	// Скасування при disconnect.
 	const onClose = (): void => {
@@ -163,6 +170,8 @@ export async function handleChat(
 
 	let promptError: unknown = null;
 	try {
+		// Action: плагіни можуть підготуватись ДО виклику LLM (payload: session/message/model).
+		await hooks.doAction("agent:before-prompt", opened.session, message, resolved.model);
 		await harness.prompt(message);
 	} catch (err) {
 		promptError = err;
@@ -171,6 +180,11 @@ export async function handleChat(
 	await finished;
 	unsub?.();
 	req.off("close", onClose);
+
+	// Action: плагіні можуть відреагувати на завершення відповіді (payload: session/model).
+	if (promptError === null) {
+		await hooks.doAction("agent:after-response", opened.session, resolved.model);
+	}
 
 	// Авто-compact при наближенні до ліміту (зберігається автоматично, стрімить session_compact).
 	if (promptError === null) {
@@ -204,6 +218,7 @@ export async function handleCompact(
 	defs: ProviderDefinitions,
 	model: { provider: string; modelId: string } | null,
 	cwd: string,
+	hooks: HookEngine,
 ): Promise<void> {
 	initSSE(res);
 
@@ -231,7 +246,7 @@ export async function handleCompact(
 		return;
 	}
 
-	const harness = createHarness(resolved, opened.session, cwd);
+	const harness = await createHarness(resolved, opened.session, cwd, hooks);
 	const customInstructions =
 		typeof body.customInstructions === "string" ? body.customInstructions : undefined;
 

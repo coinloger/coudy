@@ -6,6 +6,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
 import {
   HookEngine,
   type PluginBackendModule,
@@ -13,6 +14,67 @@ import {
   type PluginManifest,
   type PluginRegistry,
 } from "@coudycode/core";
+
+const require = createRequire(import.meta.url);
+
+/** Версія ядра coudycode (з root package.json) для перевірки minCoreVersion. */
+const CORE_VERSION: string = (() => {
+  try {
+    return require("../../package.json").version as string;
+  } catch {
+    return "0.0.0";
+  }
+})();
+
+/** Перевірити рядок semver (major.minor.patch, опц. -prerelease). */
+const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?$/;
+
+/** kebab-case: нижній регістр, цифри, дефіси (не на початку/кінці). */
+const KEBAB_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+
+/** Порівняти два semver: 1 якщо a>b, -1 якщо a<b, 0 якщо рівні. */
+function compareSemver(a: string, b: string): number {
+  const pa = a.split("-")[0]!.split(".").map(Number);
+  const pb = b.split("-")[0]!.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    const va = pa[i] ?? 0;
+    const vb = pb[i] ?? 0;
+    if (va > vb) return 1;
+    if (va < vb) return -1;
+  }
+  return 0;
+}
+
+/** Валідувати маніфест плагіна. Повертає null, якщо OK, або повідомлення про помилку. */
+function validateManifest(manifest: PluginManifest): string | null {
+  if (typeof manifest.name !== "string" || !KEBAB_RE.test(manifest.name)) {
+    return `name "${manifest.name}" не відповідає kebab-case`;
+  }
+  if (typeof manifest.version !== "string" || !SEMVER_RE.test(manifest.version)) {
+    return `version "${manifest.version}" не є semver`;
+  }
+  if (manifest.minCoreVersion !== undefined) {
+    if (!SEMVER_RE.test(manifest.minCoreVersion)) {
+      return `minCoreVersion "${manifest.minCoreVersion}" не є semver`;
+    }
+    if (compareSemver(CORE_VERSION, manifest.minCoreVersion) < 0) {
+      return `вимагає coudycode >= ${manifest.minCoreVersion}, поточна ${CORE_VERSION}`;
+    }
+  }
+  if (
+    manifest.permissions !== undefined &&
+    (!Array.isArray(manifest.permissions) || manifest.permissions.some((p) => typeof p !== "string"))
+  ) {
+    return "permissions має бути масивом рядків";
+  }
+  if (
+    manifest.dependencies !== undefined &&
+    (!Array.isArray(manifest.dependencies) || manifest.dependencies.some((d) => typeof d !== "string"))
+  ) {
+    return "dependencies має бути масивом рядків";
+  }
+  return null;
+}
 
 /** Локальний реєстр стану для конкретного плагіна. */
 function createRegistry(pluginName: string): PluginRegistry {
@@ -94,6 +156,13 @@ export class PluginLoader {
     const manifestPath = join(dir, "plugin.json");
     const raw = await readFile(manifestPath, "utf-8");
     const manifest = JSON.parse(raw) as PluginManifest;
+
+    // Валідація маніфесту: невалідний → warning + skip.
+    const validationError = validateManifest(manifest);
+    if (validationError) {
+      console.warn(`[plugin-loader] "${dir}" пропущено: ${validationError}`);
+      return;
+    }
 
     if (manifest.enabled === false) {
       this.plugins.set(manifest.name, { manifest, dir, module: null, active: false });

@@ -427,6 +427,7 @@ export class CoudyServer {
           ? { provider: sessionModel.provider, modelId: sessionModel.modelId }
           : null,
         process.cwd(),
+        this.hooks,
       );
       return;
     }
@@ -506,6 +507,7 @@ export class CoudyServer {
         this.providerDefs,
         sessionModel ? { provider: sessionModel.provider, modelId: sessionModel.modelId } : null,
         process.cwd(),
+        this.hooks,
       );
       return;
     }
@@ -523,13 +525,6 @@ export class CoudyServer {
     }
 
     this.sendJson(res, 404, { error: "Not found" });
-
-    // --- Зарезервовані hook-точки бекенду (фіктивно активуються майбутнім кодом агента) ---
-    // await this.hooks.applyFilters("prompt:system", defaultSystemPrompt);   // filter
-    // await this.hooks.applyFilters("tools:register", defaultTools);          // filter
-    // await this.hooks.applyFilters("providers:register", defaultProviders);  // filter
-    // await this.hooks.doAction("agent:before-prompt", prompt);               // action
-    // await this.hooks.doAction("agent:after-response", response);            // action
   }
 
   private async servePluginFile(pathname: string, res: ServerResponse): Promise<void> {

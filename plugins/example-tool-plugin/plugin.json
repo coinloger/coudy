@@ -1,0 +1,14 @@
+{
+  "name": "example-tool-plugin",
+  "version": "1.0.0",
+  "title": "Example Tool Plugin",
+  "description": "Демо agent-плагіна: додає інструмент «timestamp» (поточний час) + модифікує системний промпт. Доводить роботу hooks tools:register та prompt:system.",
+  "author": "coudycode",
+  "homepage": "https://github.com/coinloger/coudy",
+  "minCoreVersion": "0.1.0",
+  "permissions": ["tools"],
+  "enabled": true,
+  "entry": {
+    "backend": "./backend/index.js"
+  }
+}
