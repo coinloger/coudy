@@ -6,6 +6,6 @@
   "enabled": true,
   "entry": {
     "backend": "./backend/index.js",
-    "frontend": "./frontend/index.js"
+    "frontend": "./frontend/index.tsx"
   }
 }

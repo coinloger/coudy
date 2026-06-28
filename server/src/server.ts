@@ -12,6 +12,7 @@ import http, {
 } from "node:http";
 import { normalize, join } from "node:path";
 import { readFile, stat } from "node:fs/promises";
+import { transform as esbuildTransform } from "esbuild";
 import { HookEngine } from "@coudycode/core";
 import type { HttpRoute, HttpRouteContext } from "@coudycode/core";
 import { findEnvKeys, getModels, getProviders } from "@coudycode/ai";
@@ -43,6 +44,8 @@ export class CoudyServer {
   private readonly loader: PluginLoader;
   private readonly port: number;
   private startedAt: number | null = null;
+  /** Кеш скомпільованих TS/TSX-фронт-ентрі плагінів (по mtime). */
+  private pluginTransformCache = new Map<string, { mtime: number; code: string }>();
   // Поточна модель (in-memory; дефолт — anthropic/claude-sonnet).
   private currentModel = { provider: "anthropic", modelId: "claude-sonnet-4-20250514" };
   // Сховище облікових даних провайдерів (API-ключі).
@@ -609,6 +612,15 @@ export class CoudyServer {
         this.sendJson(res, 404, { error: "Not a file" });
         return;
       }
+      // TS/TSX-фронт-ентрі: компілювати esbuildʼом (jsx → window.React.createElement)
+      // з кешем по mtime. JSX classic-runtime: React береться з window.React.
+      if (filePath.endsWith(".ts") || filePath.endsWith(".tsx")) {
+        const code = await this.transformPluginEntry(filePath, s.mtimeMs);
+        res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+        res.writeHead(200);
+        res.end(code);
+        return;
+      }
       const data = await readFile(filePath);
       if (filePath.endsWith(".js") || filePath.endsWith(".mjs")) {
         res.setHeader("Content-Type", "application/javascript");
@@ -622,6 +634,25 @@ export class CoudyServer {
     } catch {
       this.sendJson(res, 404, { error: "File not found" });
     }
+  }
+
+  /** Скомпілювати TS/TSX фронт-ентрі плагіна через esbuild (кеш по mtime). */
+  private async transformPluginEntry(filePath: string, mtimeMs: number): Promise<string> {
+    const cached = this.pluginTransformCache.get(filePath);
+    if (cached && cached.mtime === mtimeMs) return cached.code;
+    const source = await readFile(filePath, "utf-8");
+    const result = await esbuildTransform(source, {
+      loader: filePath.endsWith(".tsx") ? "tsx" : "ts",
+      // JSX classic-runtime: React з глобального window.React (без import React).
+      jsxFactory: "window.React.createElement",
+      jsxFragment: "window.React.Fragment",
+      target: "es2022",
+      format: "esm",
+      sourcemap: "inline",
+      sourcefile: filePath,
+    });
+    this.pluginTransformCache.set(filePath, { mtime: mtimeMs, code: result.code });
+    return result.code;
   }
 
   /** Канонічне імʼя env-змінної провайдера (для підказки в каталозі), якщо виявлено. */
