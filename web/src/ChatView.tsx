@@ -3,7 +3,6 @@ import { Send, Square } from "lucide-react";
 import type { AgentEvent, AgentMessage } from "@coudycode/agent-core";
 import {
 	ConversationView,
-	WorkingIndicator,
 	applyEvent,
 	initialConversationState,
 	type ConversationState,
@@ -212,7 +211,6 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 							onSelect={handleSelectModel}
 						/>
 					)}
-					{live.working && <WorkingIndicator label="Агент працює" />}
 				</div>
 			</div>
 
@@ -223,7 +221,7 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 				style={{ background: "var(--pi-page-bg, #f8f8f8)" }}
 			>
 				<div style={{ maxWidth: 900, margin: "0 auto" }}>
-					{messages.length === 0 && !live.streamingMessage ? (
+					{messages.length === 0 && !live.streamingMessage && !live.working ? (
 						<div className="text-muted text-center mt-5">
 							Напишіть перше повідомлення, щоб почати розмову.
 						</div>
@@ -235,6 +233,16 @@ export default function ChatView({ sessionId }: ChatViewProps): React.ReactNode 
 							streamingTextIndex={live.streamingTextIndex}
 							streamingThinkingIndex={live.streamingThinkingIndex}
 						/>
+					)}
+					{/* Standalone preloader: 3 крапки одразу при відправці (до першого токена). */}
+					{live.working && !live.streamingMessage && (
+						<div className="cc-ui-msg cc-ui-msg-assistant">
+							<span className="cc-ui-streaming-dots" aria-hidden="true">
+								<span />
+								<span />
+								<span />
+							</span>
+						</div>
 					)}
 					{error && (
 						<div
