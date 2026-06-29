@@ -49,19 +49,11 @@
 	max-width: 100%;
 	position: relative;
 }
-/* Дії на повідомленнях (від плагінів ui:message-actions + built-in) — плаваюча панель угорі-праворуч, видимі при hover. */
+/* Дії на повідомленнях (від плагінів ui:message-actions + built-in) — in-flow під контентом, завжди видимі. */
 .cc-ui-msg-actions {
-	position: absolute;
-	top: 0.35rem;
-	right: 0.35rem;
 	display: flex;
 	gap: 0.2rem;
-	opacity: 0;
-	transition: opacity 0.12s ease;
-	z-index: 2;
-}
-.cc-ui-msg:hover > .cc-ui-msg-actions,
-.cc-ui-msg:focus-within > .cc-ui-msg-actions {
+	margin-top: 0.25rem;
 	opacity: 1;
 }
 .cc-ui-msg-action {

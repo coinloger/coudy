@@ -70,7 +70,8 @@ export function ConversationView({
 							toolStatus={toolStatus}
 							streamingTextIndex={isStreaming ? streamingTextIndex : undefined}
 							streamingThinkingIndex={isStreaming ? streamingThinkingIndex : undefined}
-							actions={messageActions}
+							// Під час стрімінгу дії приховані — доки агент не завершить відповідь.
+							actions={isStreaming ? [] : messageActions}
 						/>
 					);
 				}
