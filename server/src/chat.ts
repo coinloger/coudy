@@ -478,31 +478,35 @@ export async function handleChat(
 	}
 
 	// Авто-назва чату: після ПЕРШОГО ходу, якщо title ще дефолтний/порожній →
-	// згенерувати через легкий LLM-completion (fallback-евристика) + емітнути session:title.
+	// згенерувати назву + емітнути session:title. Працює ЗАВЖДИ (базується на
+	// user-повідомленні): при успішній відповіді — LLM-completion, при помилці
+	// моделі (promptError) — одразу heuristic-fallback (перші слова повідомлення).
 	// SSE ще відкритий → клієнт (ChatView + sidebar) оновиться живцем.
-	if (promptError === null) {
-		try {
-			const currentName = await opened.session.getSessionName();
-			const needsTitle = !currentName || DEFAULT_SESSION_TITLES.has(currentName);
-			if (needsTitle) {
-				const ctx = await opened.session.buildContext();
-				// Лише перший хід: рахуємо повідомлення користувача (вкл. те, що щойно відправили).
-				const userCount = ctx.messages.filter((m) => m.role === "user").length;
-				if (userCount <= 1) {
+	try {
+		const currentName = await opened.session.getSessionName();
+		const needsTitle = !currentName || DEFAULT_SESSION_TITLES.has(currentName);
+		if (needsTitle) {
+			const ctx = await opened.session.buildContext();
+			// Лише перший хід: рахуємо повідомлення користувача (вкл. те, що щойно відправили).
+			const userCount = ctx.messages.filter((m) => m.role === "user").length;
+			if (userCount <= 1) {
+				// LLM-назву кличемо лише при успішній відповіді; при помилці моделі — одразу евристика.
+				let title: string | null = null;
+				if (promptError === null) {
 					const asstText = assistantMessageText(
 						[...ctx.messages].reverse().find((m) => m.role === "assistant"),
 					);
-					let title: string | null = await llmChatTitle(resolved, message, asstText);
-					if (!title) title = heuristicTitle(message);
-					if (title && !DEFAULT_SESSION_TITLES.has(title)) {
-						await sessions.rename(sessionId, title);
-						writeSSE(res, { type: "session:title", sessionId, title });
-					}
+					title = await llmChatTitle(resolved, message, asstText);
+				}
+				if (!title) title = heuristicTitle(message);
+				if (title && !DEFAULT_SESSION_TITLES.has(title)) {
+					await sessions.rename(sessionId, title);
+					writeSSE(res, { type: "session:title", sessionId, title });
 				}
 			}
-		} catch {
-			/* авто-назва необовʼязкова — не ламати стрім */
 		}
+	} catch {
+		/* авто-назва необовʼязкова — не ламати стрім */
 	}
 
 	// Авто-compact при наближенні до ліміту (зберігається автоматично, стрімить session_compact).
