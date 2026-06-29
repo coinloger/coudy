@@ -79,6 +79,51 @@ function libDeps(cwd: string) {
 
 // ===== Schemas для тулзів =====
 
+/**
+ * Опис параметра `code` для library_create/modify та session-аналогів.
+ * Містить ПОВНИЙ контракт ctx + робочий приклад — щоб модель не вигадувала API
+ * (напр. ctx.sh.exec замість ctx.sh). Джерело правди: packages/library/src/types.ts (LibraryCtx).
+ */
+const CODE_PARAM_DESCRIPTION = [
+	"Код ESM-модуля (TypeScript). Структура обовʼязкова:",
+	'  export const meta = { name: "...", description: "...", params: { field: { type: "string", desc: "..." } } };',
+	"  export async function run(params: Record<string, any>, ctx: any) { ... return результат; }",
+	"",
+	"ctx — контекст з примітивами (ВСІ async, await обовʼязковий):",
+	"  ctx.cwd: string",
+	"  ctx.fs.read(path): Promise<string>       ctx.fs.write(path, content): Promise<void>",
+	"  ctx.fs.readJson(path): Promise<any>      ctx.fs.writeJson(path, data): Promise<void>",
+	"  ctx.fs.exists(path): Promise<boolean>",
+	"  ctx.sh(command, opts?): Promise<{stdout,stderr,code}>   ← ФУНКЦІЯ, не ctx.sh.exec!",
+	"  ctx.proc.list(): unknown[]               ctx.proc.kill(pid): boolean",
+	"  ctx.db: string (шлях до папки з .db файлами)",
+	"  ctx.path.join(...parts): string          ctx.path.resolve(p): string",
+	'  ctx.call(name, params, { scope?: "global"|"session" }): Promise<unknown>  ← КОМПОЗИЦІЯ інших функцій',
+	"",
+	"РОБОЧИЙ ПРИКЛАД (скопіюй патерн):",
+	'  export const meta = { name: "sqlite_query", description: "Виконує SQL через sqlite3", params: { sql: { type: "string", desc: "SQL запит" } } };',
+	'  export async function run(params: { sql: string }, ctx: any) {',
+	'    const dbPath = ctx.path.join(ctx.db, "data.db");',
+	'    const r = await ctx.sh(`sqlite3 -json "${dbPath}" "${params.sql.replace(/"/g, "\\\"")}"`);',
+	"    if (r.code !== 0) throw new Error(r.stderr);",
+	'    return JSON.parse(r.stdout || "[]");',
+	"  }",
+	"",
+	"ЗАБОРОНЕНО: external imports (deno.land, npm) — лише node:* вбудовані. ctx.fs/sh/proc/path/call НЕ імпортуються, вони приходять 2-м аргументом run().",
+].join("\n");
+
+/**
+ * Якщо runtime-помилка вказує на вигаданий API контексту (ctx.sh.exec та ін.) —
+ * додати підказку з правильним контрактом, щоб модель сама себе поправила.
+ */
+function hintRuntimeError(err: unknown): string {
+	const msg = err instanceof Error ? err.message : String(err);
+	if (/\.exec is not a function|ctx\.sh\b.*is not a function|ctx\.\w+\.\w+ is not a function/i.test(msg)) {
+		return `${msg}\n(підказка: ctx.sh — ФУНКЦІЯ, викликай \`await ctx.sh(\"cmd\")\` → {stdout,stderr,code}; НЕ ctx.sh.exec. ctx.fs/proc/path/call теж через await.)`;
+	}
+	return msg;
+}
+
 const searchSchema = Type.Object({
 	query: Type.String({ description: "Опис задачі/функциональності для пошуку в бібліотеці. Семантичний пошук за описом+тегами." }),
 });
@@ -96,7 +141,7 @@ const createSchema = Type.Object({
 		required: Type.Optional(Type.Boolean()),
 		desc: Type.Optional(Type.String()),
 	}), { description: "Контракт параметрів: імʼя → {type, required, desc}. Загальні параметри, без хардкоду." }),
-	code: Type.String({ description: "Код ESM-модуля (TS): export const meta + export async function run(params, ctx). ctx.fs/sh/proc/db/path + ctx.call для композиції." }),
+	code: Type.String({ description: CODE_PARAM_DESCRIPTION }),
 	category: Type.Optional(Type.String({ description: "Категорія (опц.): markets, git, fs, ..." })),
 	tags: Type.Optional(Type.Array(Type.String(), { description: "Теги для пошуку (опц.)." })),
 });
@@ -108,7 +153,7 @@ const modifySchema = Type.Object({
 		required: Type.Optional(Type.Boolean()),
 		desc: Type.Optional(Type.String()),
 	}))),
-	code: Type.Optional(Type.String({ description: "Новий код ESM-модуля." })),
+	code: Type.Optional(Type.String({ description: CODE_PARAM_DESCRIPTION })),
 	category: Type.Optional(Type.String()),
 	tags: Type.Optional(Type.Array(Type.String())),
 });
@@ -126,7 +171,7 @@ const sessionCreateSchema = Type.Object({
 		required: Type.Optional(Type.Boolean()),
 		desc: Type.Optional(Type.String()),
 	}), { description: "Контракт параметрів (опц.)." })),
-	code: Type.String({ description: "Код ESM-модуля: export const meta + export async function run(params, ctx). ctx.call(name, params, {scope}) резолвить session→global." }),
+	code: Type.String({ description: CODE_PARAM_DESCRIPTION }),
 	tags: Type.Optional(Type.Array(Type.String())),
 });
 const sessionCallSchema = Type.Object({
@@ -141,7 +186,7 @@ const sessionModifySchema = Type.Object({
 		required: Type.Optional(Type.Boolean()),
 		desc: Type.Optional(Type.String()),
 	}))),
-	code: Type.Optional(Type.String()),
+	code: Type.Optional(Type.String({ description: CODE_PARAM_DESCRIPTION })),
 	tags: Type.Optional(Type.Array(Type.String())),
 });
 const sessionListSchema = Type.Object({});
@@ -194,7 +239,12 @@ export function createLibraryTools(sessionId: string, cwd: string): AgentTool[] 
 			promptSnippet: "Call an existing library function",
 			parameters: callSchema,
 			async execute(_id, params: Static<typeof callSchema>) {
-				const result = await libraryStore.run(params.name, params.params, deps);
+				let result: unknown;
+				try {
+					result = await libraryStore.run(params.name, params.params, deps);
+				} catch (err) {
+					throw new Error(hintRuntimeError(err));
+				}
 				const text = typeof result === "string" ? result : JSON.stringify(result, null, 2);
 				return { content: [{ type: "text", text }], details: { result } };
 			},
@@ -318,7 +368,12 @@ export function createLibraryTools(sessionId: string, cwd: string): AgentTool[] 
 			parameters: sessionCallSchema,
 			async execute(_id, params: Static<typeof sessionCallSchema>) {
 				const store = getSessionScriptStore(sessionId);
-				const result = await store.run(params.name, params.params, deps);
+				let result: unknown;
+				try {
+					result = await store.run(params.name, params.params, deps);
+				} catch (err) {
+					throw new Error(hintRuntimeError(err));
+				}
 				const text = typeof result === "string" ? result : JSON.stringify(result, null, 2);
 				return { content: [{ type: "text", text }], details: { result } };
 			},
@@ -341,7 +396,7 @@ export function createLibraryTools(sessionId: string, cwd: string): AgentTool[] 
 				if (!entry) {
 					return { content: [{ type: "text", text: `Сесійний скрипт "${params.name}" не знайдено.` }], details: { modified: false } };
 				}
-				return { content: [{ type: "text", text: `Оновлено сесійний скрипт "${entry.name}".` }], details: { modified: true } };
+				return { content: [{ type: "text", text: `Оновлено сесійний скрипт "${entry.name}". Тепер виконай session_script_call(name, params) щоб перевірити що працює — не модифікуй повторно без перевірки.` }], details: { modified: true } };
 			},
 		},
 		{
