@@ -34,6 +34,7 @@ import { SessionManager } from "./sessions.js";
 import { PromptTemplateStore, SessionPromptBinding } from "./prompts.js";
 import { PluginSessionRegistryImpl, PluginSessionStore } from "./plugin-sessions.js";
 import { handleChat, handleCompact, getGlobalTools } from "./chat.js";
+import { processRegistry } from "./processes.js";
 
 export interface CoudyServerOptions {
   port?: number;
@@ -116,6 +117,10 @@ export class CoudyServer {
   async stop(): Promise<void> {
     // --- Hook-точка: server:stop (action) ---
     await this.hooks.doAction("server:stop");
+
+    // Вбити всі живі процеси агента (анти-сирота при shutdown — рестарт без сиріт).
+    const killed = processRegistry.killAll();
+    if (killed > 0) console.log(`[coudycode] Зупинено процесів агента: ${killed}`);
 
     await new Promise<void>(resolve => {
       if (this.server) {
@@ -509,6 +514,32 @@ export class CoudyServer {
     if (method === "GET" && pathname === "/api/tools") {
       const tools = await getGlobalTools(process.cwd(), this.hooks);
       this.sendJson(res, 200, { tools });
+      return;
+    }
+
+    // GET /api/processes — живі процеси агента (спавнені через bash, вкл. фонові).
+    if (method === "GET" && pathname === "/api/processes") {
+      this.sendJson(res, 200, { processes: processRegistry.list() });
+      return;
+    }
+
+    // POST /api/processes/kill-all — зупинити всі живі процеси.
+    if (method === "POST" && pathname === "/api/processes/kill-all") {
+      const killed = processRegistry.killAll();
+      this.sendJson(res, 200, { killed });
+      return;
+    }
+
+    // POST /api/processes/:pid/kill — зупинити одне дерево процесів за pid.
+    const procKillMatch = /^\/api\/processes\/(\d+)\/kill$/.exec(pathname);
+    if (method === "POST" && procKillMatch) {
+      const pid = Number(procKillMatch[1]);
+      const ok = processRegistry.kill(pid);
+      if (!ok) {
+        this.sendJson(res, 404, { error: `Процес ${pid} не знайдено` });
+        return;
+      }
+      this.sendJson(res, 200, { killed: pid });
       return;
     }
 

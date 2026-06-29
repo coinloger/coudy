@@ -11,6 +11,7 @@ import {
 import "@coudycode/ui/styles.css";
 import { streamChat } from "./chat-stream";
 import { ModelSelector, type CurrentModel, type ProviderGroup } from "./ModelSelector";
+import { ProcessBar } from "./ProcessBar";
 
 export interface PluginChatCanvasProps {
 	/** Імʼя плагіна-власника сесії. */
@@ -341,7 +342,9 @@ export default function PluginChatCanvas({
 			</div>
 
 			<div className="border-top p-3 bg-white">
-				<form onSubmit={handleSubmit} className="d-flex gap-2" style={{ maxWidth: 900, margin: "0 auto" }}>
+				<div className="d-flex flex-column" style={{ maxWidth: 900, margin: "0 auto" }}>
+					<ProcessBar />
+					<form onSubmit={handleSubmit} className="d-flex gap-2" style={{ maxWidth: 900, margin: "0 auto" }}>
 					<input
 						type="text"
 						className="form-control"
@@ -370,6 +373,7 @@ export default function PluginChatCanvas({
 						</button>
 					)}
 				</form>
+				</div>
 			</div>
 		</div>
 	);

@@ -64,7 +64,27 @@ export interface BashOperations {
  * This is useful for extensions that intercept user_bash and still want pi's
  * standard local shell behavior while wrapping or rewriting commands.
  */
-export function createLocalBashOperations(options?: { shellPath?: string }): BashOperations {
+/** Інформація про спавнений процес (для реєстру процесів агента). */
+export interface BashProcessInfo {
+	pid: number;
+	/** Лідер процесної групи; на Unix (detached) === pid. */
+	pgid: number;
+	command: string;
+	cwd: string;
+}
+
+/** Хук, що викликається одразу після spawn bash-процесу (для реєстру). */
+export type BashOnSpawnHook = (info: BashProcessInfo) => void;
+/** Хук, що викликається після завершення bash-команди (анти-сирота). */
+export type BashOnCompleteHook = (info: BashProcessInfo & { exitCode: number | null }) => void;
+
+export function createLocalBashOperations(options?: {
+	shellPath?: string;
+	onSpawn?: BashOnSpawnHook;
+	onComplete?: BashOnCompleteHook;
+}): BashOperations {
+	const onSpawn = options?.onSpawn;
+	const onComplete = options?.onComplete;
 	return {
 		exec: async (command, cwd, { onData, signal, timeout, env }) => {
 			const { shell, args } = getShellConfig(options?.shellPath);
@@ -84,7 +104,11 @@ export function createLocalBashOperations(options?: { shellPath?: string }): Bas
 				stdio: ["ignore", "pipe", "pipe"],
 				windowsHide: true,
 			});
-			if (child.pid) trackDetachedChildPid(child.pid);
+			if (child.pid) {
+				trackDetachedChildPid(child.pid);
+				// Реєстр процесів: pgid = pid на Unix (detached → лідер групи).
+				onSpawn?.({ pid: child.pid, pgid: child.pid, command, cwd });
+			}
 			let timedOut = false;
 			let timeoutHandle: NodeJS.Timeout | undefined;
 			const onAbort = () => {
@@ -111,6 +135,9 @@ export function createLocalBashOperations(options?: { shellPath?: string }): Bas
 				// Handle shell spawn errors and wait for the process to terminate without hanging
 				// on inherited stdio handles held by detached descendants.
 				const exitCode = await waitForChildProcess(child);
+				// Анти-сирота: після завершення команди дати реєстру перевірити групу
+				// (фонова `&` ще жива → залишити; інакше прибрати).
+				if (child.pid) onComplete?.({ pid: child.pid, pgid: child.pid, command, cwd, exitCode });
 				if (signal?.aborted) {
 					throw new Error("aborted");
 				}
@@ -149,6 +176,10 @@ export interface BashToolOptions {
 	shellPath?: string;
 	/** Hook to adjust command, cwd, or env before execution */
 	spawnHook?: BashSpawnHook;
+	/** Хук після spawn (для реєстру процесів агента). Лише з дефолтними operations. */
+	onSpawn?: BashOnSpawnHook;
+	/** Хук після завершення команди (анти-сирота). Лише з дефолтними operations. */
+	onComplete?: BashOnCompleteHook;
 	/** Hard cap для timeout (секунди). Передається через .pi/config.json. */
 	maxTimeoutSec?: number;
 }
@@ -164,7 +195,13 @@ export function createBashToolDefinition(
 	cwd: string,
 	options?: BashToolOptions,
 ): ToolDefinition<typeof bashSchema, BashToolDetails | undefined> {
-	const ops = options?.operations ?? createLocalBashOperations({ shellPath: options?.shellPath });
+	const ops =
+		options?.operations ??
+		createLocalBashOperations({
+			shellPath: options?.shellPath,
+			onSpawn: options?.onSpawn,
+			onComplete: options?.onComplete,
+		});
 	const commandPrefix = options?.commandPrefix;
 	const spawnHook = options?.spawnHook;
 	const maxTimeoutSec = options?.maxTimeoutSec;

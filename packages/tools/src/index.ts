@@ -139,6 +139,9 @@ export {
 	type BashToolDetails,
 	type BashToolInput,
 	type BashToolOptions,
+	type BashProcessInfo,
+	type BashOnSpawnHook,
+	type BashOnCompleteHook,
 } from "./bash.ts";
 export {
 	createEditTool,
@@ -188,3 +191,4 @@ export {
 	wrapToolDefinition,
 	wrapToolDefinitions,
 } from "./tool-definition-wrapper.ts";
+export { killProcessTree } from "./utils/shell.ts";

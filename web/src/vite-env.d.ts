@@ -3,6 +3,7 @@
 import type React from "react";
 import type { PluginChatCanvasProps } from "./PluginChatCanvas";
 import type { PanelProps, CardProps } from "./PluginLayout";
+import type { ProcessBarProps } from "./ProcessBar";
 
 /** Глобальний API для плагінів (TSX): React + reusable-компоненти. */
 declare global {
@@ -13,6 +14,7 @@ declare global {
 			PluginChatCanvas: (props: PluginChatCanvasProps) => React.ReactNode;
 			Panel: (props: PanelProps) => React.ReactNode;
 			Card: (props: CardProps) => React.ReactNode;
+			ProcessBar: (props: ProcessBarProps) => React.ReactNode;
 		};
 	}
 }

@@ -13,6 +13,7 @@ import {
 import "@coudycode/ui/styles.css";
 import { streamChat } from "./chat-stream";
 import { ModelSelector, type CurrentModel, type ProviderGroup } from "./ModelSelector";
+import { ProcessBar } from "./ProcessBar";
 import { PromptSelector, type PromptTemplateEntry } from "./PromptSelector";
 import type { ChatPanel, MessageAction } from "./types";
 
@@ -453,11 +454,13 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 			</div>
 
 			<div className="border-top p-3 bg-white">
-				<form
-					onSubmit={handleSubmit}
-					className="d-flex gap-2"
-					style={{ maxWidth: 900, margin: "0 auto" }}
-				>
+				<div className="d-flex flex-column" style={{ maxWidth: 900, margin: "0 auto" }}>
+					<ProcessBar />
+					<form
+						onSubmit={handleSubmit}
+						className="d-flex gap-2"
+						style={{ maxWidth: 900, margin: "0 auto" }}
+					>
 					<input
 						type="text"
 						className="form-control"
@@ -481,6 +484,7 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 						</button>
 					)}
 				</form>
+				</div>
 			</div>
 		</div>
 	);

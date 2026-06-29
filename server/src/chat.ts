@@ -14,7 +14,9 @@ import type { AgentEvent, AgentHarnessEvent, AgentTool } from "@coudycode/agent-
 import { NodeExecutionEnv } from "@coudycode/agent-core/node";
 import { getModel } from "@coudycode/ai";
 import type { Model, Api } from "@coudycode/ai";
-import { createAllTools } from "@coudycode/tools";
+import { createAllTools, wrapToolDefinition } from "@coudycode/tools";
+import type { ToolDefinition } from "@coudycode/tools";
+import { Type, type Static } from "typebox";
 import type { Session } from "@coudycode/agent-core";
 import { HookEngine } from "@coudycode/core";
 import { SessionManager } from "./sessions.js";
@@ -28,6 +30,7 @@ import {
   resolvePluginOwnership,
 } from "./plugin-sessions.js";
 import type { PluginSessionOwnership } from "@coudycode/core";
+import { processRegistry } from "./processes.js";
 
 /** Конфіг моделі для запуску агента. */
 interface ResolvedModel {
@@ -81,8 +84,75 @@ export interface ToolInfo {
  * (hooks.applyFilters("tools:register", base)). Для UI-селектора тулзів шаблону.
  */
 export async function getGlobalTools(cwd: string, hooks: HookEngine): Promise<ToolInfo[]> {
-	const tools = await hooks.applyFilters<AgentTool[]>("tools:register", createAllTools(cwd));
+	// Базові тулзи + processes-тулз; плагіни додають свої через filter «tools:register».
+	const base = [...createAllTools(cwd), createProcessesTool()];
+	const tools = await hooks.applyFilters<AgentTool[]>("tools:register", base);
 	return tools.map((t) => ({ name: t.name, description: t.description }));
+}
+
+/**
+ * Agent-тулз «processes»: список живих процесів + вбивство одного.
+ * Працює через глобальний singleton-реєстр (див. processes.ts).
+ */
+export function createProcessesTool(): AgentTool {
+	const processesSchema = Type.Object({
+		action: Type.Union([Type.Literal("list"), Type.Literal("kill")], {
+			description: "list — показати живі процеси; kill — зупинити процес за pid.",
+		}),
+		pid: Type.Optional(
+			Type.Number({ description: "pid процесу для kill (з результату list). Ігнорується для list." }),
+		),
+	});
+	const def: ToolDefinition<typeof processesSchema> = {
+		name: "processes",
+		label: "processes",
+		description:
+			"Переглянути живі процеси, спавнені через bash (вкл. фонові), або вбити одне дерево процесів за pid. " +
+			"Використовуй action: 'list' щоб побачити поточні процеси, action: 'kill' з pid — щоб зупинити.",
+		promptSnippet: "List/kill agent-spawned background processes",
+		parameters: processesSchema,
+		async execute(_id, params: Static<typeof processesSchema>) {
+			if (params.action === "kill") {
+				if (typeof params.pid !== "number") {
+					throw new Error("Для action 'kill' потрібен pid (число).");
+				}
+				const ok = processRegistry.kill(params.pid);
+				return {
+					content: [
+						{ type: "text", text: ok ? `Процес ${params.pid} зупинено.` : `Процес ${params.pid} не знайдено в реєстрі.` },
+					],
+					details: undefined,
+				};
+			}
+			const list = processRegistry.list();
+			if (list.length === 0) {
+				return { content: [{ type: "text", text: "Жодного живого процесу." }], details: undefined };
+			}
+			const lines = list.map(
+				(p) =>
+					`pid=${p.pid} status=${p.status} age=${Math.round(p.ageMs / 1000)}s cwd=${p.cwd} :: ${p.command}`,
+			);
+			return { content: [{ type: "text", text: `Живі процеси (${list.length}):\n${lines.join("\n")}` }], details: undefined };
+		},
+	};
+	return wrapToolDefinition(def);
+}
+
+/**
+ * Базові тулзи + processes-тулз з підключеним реєстром процесів (spawnHook-и).
+ * Анти-сирота: onSpawn реєструє; onComplete позначає фоновими або прибирає.
+ */
+function createTrackedTools(cwd: string, sessionId: string): AgentTool[] {
+	return [
+		...createAllTools(cwd, {
+			bash: {
+				onSpawn: ({ pid, pgid, command, cwd: toolCwd }) =>
+					processRegistry.register({ pid, pgid, command, cwd: toolCwd, startedAt: Date.now(), sessionId, status: "running" }),
+				onComplete: ({ pid }) => processRegistry.markBackgroundIfAlive(pid),
+			},
+		}),
+		createProcessesTool(),
+	];
 }
 
 /** Створити AgentHarness для сесії з резолвленою моделлю + auth + tools + промпт. */
@@ -90,12 +160,13 @@ async function createHarness(
 	resolved: ResolvedModel,
 	session: Session,
 	cwd: string,
+	sessionId: string,
 	hooks: HookEngine,
 	template: { content: string; tools: string[] | null } | null,
 ): Promise<AgentHarness> {
 	const env = new NodeExecutionEnv({ cwd });
-	// Базові інструменти + плагін-тулзи (через filter «tools:register»).
-	let tools = await hooks.applyFilters<AgentTool[]>("tools:register", createAllTools(cwd));
+	// Базові інструменти (з реєстром процесів) + processes-тулз + плагін-тулзи.
+	let tools = await hooks.applyFilters<AgentTool[]>("tools:register", createTrackedTools(cwd, sessionId));
 	// Фільтр за toolset-ом шаблону ПІСЛЯ applyFilters → контролює всі тулзи (вкл. плагін):
 	// null = усі; [] = без; [...] = лише ці (базові + плагін з цього списку).
 	if (template && template.tools !== null) {
@@ -128,13 +199,14 @@ async function createPluginHarness(
 	resolved: ResolvedModel,
 	session: Session,
 	cwd: string,
+	sessionId: string,
 	ownership: PluginSessionOwnership,
 ): Promise<AgentHarness> {
 	const env = new NodeExecutionEnv({ cwd });
 	const { config } = ownership;
-	// Базові інструменти (read/bash/…) лише якщо inheritBaseTools !== false.
+	// Базові інструменти (з реєстром процесів) лише якщо inheritBaseTools !== false.
 	const inheritBase = config.inheritBaseTools !== false;
-	const baseTools = inheritBase ? createAllTools(cwd) : [];
+	const baseTools = inheritBase ? createTrackedTools(cwd, sessionId) : [];
 	// Тулзи плагіна (без applyFilters — структурна ізоляція).
 	const pluginTools = (config.tools ?? []) as AgentTool[];
 	const tools = [...baseTools, ...pluginTools];
@@ -254,11 +326,12 @@ export async function handleChat(
 	// Структурна ізоляція: plugin-сесія має власний конфіг (без глобальних хуків).
 	const ownership = resolvePluginOwnership(sessionId, pluginSessionRegistry, pluginSessionStore);
 	const harness = ownership
-		? await createPluginHarness(resolved, opened.session, cwd, ownership)
+		? await createPluginHarness(resolved, opened.session, cwd, sessionId, ownership)
 		: await createHarness(
 				resolved,
 				opened.session,
 				cwd,
+				sessionId,
 				hooks,
 				resolveTemplate(sessionId, promptTemplates, promptBindings),
 			);
@@ -364,8 +437,8 @@ export async function handleCompact(
 
 	const ownership = resolvePluginOwnership(sessionId, pluginSessionRegistry, pluginSessionStore);
 	const harness = ownership
-		? await createPluginHarness(resolved, opened.session, cwd, ownership)
-		: await createHarness(resolved, opened.session, cwd, hooks, resolveTemplate(sessionId, promptTemplates, promptBindings));
+		? await createPluginHarness(resolved, opened.session, cwd, sessionId, ownership)
+		: await createHarness(resolved, opened.session, cwd, sessionId, hooks, resolveTemplate(sessionId, promptTemplates, promptBindings));
 	const customInstructions =
 		typeof body.customInstructions === "string" ? body.customInstructions : undefined;
 
