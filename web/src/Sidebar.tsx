@@ -222,13 +222,13 @@ export default function Sidebar(props: SidebarProps): React.ReactNode {
       )}
 
       {/* Сесії */}
-      <div className="flex-grow-1 overflow-auto px-1">
+      <div className="flex-grow-1 overflow-auto px-1" style={{ minWidth: 0 }}>
         {!collapsed && (
           <div className="text-uppercase text-secondary small px-2 py-1">Нещодавні</div>
         )}
         <ul className="nav flex-column gap-1 mb-2">
           {filteredSessions.map((s) => (
-            <li className="nav-item" key={s.id}>
+            <li className="nav-item" key={s.id} style={{ minWidth: 0 }}>
               <ItemButton
                 active={isSessionActive(s.id)}
                 collapsed={collapsed}
@@ -270,7 +270,7 @@ export default function Sidebar(props: SidebarProps): React.ReactNode {
             {sidebarItems.map((item) => {
               const ItemIcon = resolveIcon(item.icon);
               return (
-                <li className="nav-item" key={item.id}>
+                <li className="nav-item" key={item.id} style={{ minWidth: 0 }}>
                   <ItemButton
                     active={isPluginActive(item.routeId)}
                     collapsed={collapsed}
@@ -291,7 +291,7 @@ export default function Sidebar(props: SidebarProps): React.ReactNode {
         )}
         <ul className="nav flex-column gap-1">
           {BUILTIN_FOOTER.map((f) => (
-            <li className="nav-item" key={f.id}>
+            <li className="nav-item" key={f.id} style={{ minWidth: 0 }}>
               <ItemButton
                 active={f.match(location.pathname)}
                 collapsed={collapsed}
