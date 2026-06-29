@@ -150,7 +150,8 @@ export function useSessions() {
       setSummaries((prev) => {
         const next = prev.filter((s) => s.id !== id);
         if (id === activeId) {
-          setActiveId(next.length > 0 ? next[0].id : null);
+          // Активна сесія видалена — скинути activeId (UI редиректить на дашборд).
+          setActiveId(null);
         }
         return next;
       });

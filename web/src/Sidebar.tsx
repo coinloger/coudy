@@ -139,6 +139,13 @@ export default function Sidebar(props: SidebarProps): React.ReactNode {
   const isPluginActive = (routeId?: string): boolean =>
     !!routeId && location.pathname === `/plugin/${routeId}`;
 
+  /** Видалити сесію; якщо це поточний активний чат — редирект на дашборд. */
+  const handleDeleteSession = (id: string): void => {
+    const wasActive = isSessionActive(id);
+    void onDeleteSession(id);
+    if (wasActive) navigate("/");
+  };
+
   return (
     <aside
       className="coudy-sidebar d-flex flex-column bg-dark text-light border-end"
@@ -235,7 +242,7 @@ export default function Sidebar(props: SidebarProps): React.ReactNode {
                       title="Видалити"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onDeleteSession(s.id);
+                        handleDeleteSession(s.id);
                       }}
                     >
                       <Trash2 size={14} />
