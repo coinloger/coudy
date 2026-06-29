@@ -192,8 +192,12 @@ export class LibraryStore {
 					return pathResolve(deps.cwd, p);
 				},
 			},
-			async call(name: string, params: Record<string, unknown>): Promise<unknown> {
-				return store.run(name, params, deps);
+			async call(
+				name: string,
+				params: Record<string, unknown>,
+				opts?: { scope?: "session" | "global" | "auto" },
+			): Promise<unknown> {
+				return store.resolveCall(name, params, deps, opts);
 			},
 		};
 	}
@@ -426,6 +430,19 @@ export class LibraryStore {
 	}
 
 	/**
+	 * Резолвити ctx.call: базово — лише власний store (global).
+	 * SessionScriptStore перевизначає для session→global пошуку.
+	 */
+	protected resolveCall(
+		name: string,
+		params: Record<string, unknown>,
+		deps: { cwd: string; procList: () => unknown[]; procKill: (pid: number) => boolean },
+		_opts?: { scope?: "session" | "global" | "auto" },
+	): Promise<unknown> {
+		return this.run(name, params, deps);
+	}
+
+	/**
 	 * Виконати функцію in-process: esbuild-трансформ .ts → dynamic import → run.
 	 * Hot-reload по mtime (кеш скидається при зміні файлу).
 	 */
@@ -473,5 +490,65 @@ export class LibraryStore {
 		this.moduleCache.set(abs, { mtime, url });
 		this.loadedModules.set(entry.id, mod);
 		return mod;
+	}
+}
+
+/**
+ * Сесійний store скриптів: задачоспецифічні «чорновики», scoped до sessionId.
+ *
+ * Сховище: ~/.coudycode/session-scripts/<sessionId>/ (index.json + .ts модулі, 0o600).
+ * Формат модуля ідентичний глобальному (meta + run). БЕЗ примусового search-flow.
+ *
+ * Композиція через ctx.call резолвить session→global (більш специфічне виграє):
+ * session-скрипт може кликати й інші сесійні, й глобальні.
+ */
+export class SessionScriptStore extends LibraryStore {
+	private readonly sessionId: string;
+	private readonly globalStore?: LibraryStore;
+
+	/**
+	 * @param sessionId  ідентифікатор сесії (директорія-сфера).
+	 * @param globalStore опц. посилання на глобальний store (для ctx.call session→global).
+	 * @param opts.rootDir опц. корінь (default: <coudy>/session-scripts/<sessionId>).
+	 */
+	constructor(sessionId: string, globalStore?: LibraryStore, opts?: { rootDir?: string }) {
+		const rootDir = opts?.rootDir ?? join(LibraryStore.coudyDir(), "session-scripts", sessionId);
+		super({ rootDir });
+		this.sessionId = sessionId;
+		this.globalStore = globalStore;
+	}
+
+	/** sessionId цього store. */
+	getScopeId(): string {
+		return this.sessionId;
+	}
+
+	/**
+	 * Композиція session→global: session-сценарій спершу, потім global.
+	 * opts.scope дозволяє обрати рівень явно ("session"/"global"/"auto").
+	 */
+	protected async resolveCall(
+		name: string,
+		params: Record<string, unknown>,
+		deps: { cwd: string; procList: () => unknown[]; procKill: (pid: number) => boolean },
+		opts?: { scope?: "session" | "global" | "auto" },
+	): Promise<unknown> {
+		const scope = opts?.scope ?? "auto";
+
+		// Лише сесійний рівень.
+		if (scope === "session") {
+			if (!this.get(name)) throw new LibraryError(`Сесійний скрипт "${name}" не знайдено`);
+			return this.run(name, params, deps);
+		}
+		// Лише глобальний рівень.
+		if (scope === "global") {
+			if (!this.globalStore) throw new LibraryError("Глобальний store не налаштований");
+			if (!this.globalStore.get(name)) throw new LibraryError(`Глобальну функцію "${name}" не знайдено`);
+			return this.globalStore.run(name, params, deps);
+		}
+		// auto: спершу session, потім global (більш специфічне виграє).
+		if (this.get(name)) return this.run(name, params, deps);
+		if (this.globalStore?.get(name)) return this.globalStore.run(name, params, deps);
+		throw new LibraryError(`"${name}" не знайдено ні в session, ні в global`);
 	}
 }

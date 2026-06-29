@@ -9,6 +9,9 @@ import {
 	X,
 	Loader2,
 	Code2,
+	Globe,
+	FolderClock,
+	Upload,
 } from "lucide-react";
 import type {
 	LibraryFunction,
@@ -16,6 +19,15 @@ import type {
 	ParamSpec,
 	SearchResultItem,
 } from "./types";
+
+/** Сфера: global (бібліотека) або session (сесійні скрипти). */
+type Scope = "global" | "session";
+
+/** Пропси LibraryPage: activeSessionId + список сесій (для session-режиму). */
+export interface LibraryPageProps {
+	activeSessionId: string | null;
+	sessions: { id: string; title?: string }[];
+}
 
 /** Формат-дата коротко. */
 function fmtDate(ms: number): string {
@@ -35,7 +47,9 @@ function tryParseParams(text: string): Record<string, ParamSpec> | null {
 	return null;
 }
 
-export default function LibraryPage(): React.ReactNode {
+export default function LibraryPage(props: LibraryPageProps): React.ReactNode {
+	const { activeSessionId } = props;
+	const [scope, setScope] = useState<Scope>("global");
 	const [functions, setFunctions] = useState<LibraryFunction[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
@@ -63,22 +77,34 @@ export default function LibraryPage(): React.ReactNode {
 	// Створення нової.
 	const [showCreate, setShowCreate] = useState(false);
 
+	/** Базовий URL для поточної сфери: global → /api/library, session → /api/sessions/:id/scripts. */
+	const apiBase = useMemo((): string => {
+		if (scope === "session" && activeSessionId) {
+			return `/api/sessions/${encodeURIComponent(activeSessionId)}/scripts`;
+		}
+		return "/api/library";
+	}, [scope, activeSessionId]);
+
 	const refresh = useCallback(async (): Promise<void> => {
 		try {
-			const res = await fetch("/api/library");
+			const res = await fetch(apiBase);
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			const data = (await res.json()) as { functions: LibraryFunction[] };
-			setFunctions(data.functions ?? []);
+			const data = (await res.json()) as { functions?: LibraryFunction[]; scripts?: LibraryFunction[] };
+			setFunctions(data.functions ?? data.scripts ?? []);
 		} catch (e) {
 			setError(e instanceof Error ? e.message : String(e));
 		} finally {
 			setLoading(false);
 		}
-	}, []);
+	}, [apiBase]);
 
 	useEffect(() => {
+		setSelected(null);
+		setSearchResults(null);
+		setSearchQuery("");
+		setLoading(true);
 		void refresh();
-	}, [refresh]);
+	}, [refresh, scope, activeSessionId]);
 
 	const categories = useMemo(() => {
 		const set = new Set<string>();
@@ -123,7 +149,7 @@ export default function LibraryPage(): React.ReactNode {
 	/** Відкрити функцію для перегляду/редагування. */
 	const openFunction = async (name: string): Promise<void> => {
 		try {
-			const res = await fetch(`/api/library/${encodeURIComponent(name)}`);
+			const res = await fetch(`${apiBase}/${encodeURIComponent(name)}`);
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			const data = (await res.json()) as LibraryFunctionDetail;
 			setSelected(data);
@@ -145,7 +171,7 @@ export default function LibraryPage(): React.ReactNode {
 		setError(null);
 		try {
 			const tags = editTags.split(",").map((t) => t.trim()).filter(Boolean);
-			const res = await fetch(`/api/library/${encodeURIComponent(selected.name)}`, {
+			const res = await fetch(`${apiBase}/${encodeURIComponent(selected.name)}`, {
 				method: "PATCH",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
@@ -169,7 +195,7 @@ export default function LibraryPage(): React.ReactNode {
 	const remove = async (name: string): Promise<void> => {
 		if (!confirm(`Видалити функцію «${name}»?`)) return;
 		try {
-			const res = await fetch(`/api/library/${encodeURIComponent(name)}`, { method: "DELETE" });
+			const res = await fetch(`${apiBase}/${encodeURIComponent(name)}`, { method: "DELETE" });
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			if (selected?.name === name) {
 				setSelected(null);
@@ -192,7 +218,7 @@ export default function LibraryPage(): React.ReactNode {
 				setRunResult("⚠ Невалідний JSON параметрів");
 				return;
 			}
-			const res = await fetch(`/api/library/${encodeURIComponent(selected.name)}/run`, {
+			const res = await fetch(`${apiBase}/${encodeURIComponent(selected.name)}/run`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ params }),
@@ -207,22 +233,67 @@ export default function LibraryPage(): React.ReactNode {
 		}
 	};
 
+	/** Promote сесійного скрипта в глобал (лише session-режим). */
+	const promote = async (name: string): Promise<void> => {
+		if (!activeSessionId) return;
+		setSaving(true);
+		setError(null);
+		try {
+			const res = await fetch(`${apiBase}/${encodeURIComponent(name)}/promote`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({}),
+			});
+			const data = await res.json();
+			if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+			setError(null);
+			alert(`Опубліковано «${name}» в глобальну бібліотеку.`);
+		} catch (e) {
+			setError(e instanceof Error ? e.message : String(e));
+		} finally {
+			setSaving(false);
+		}
+	};
+
 	return (
 		<div className="cc-library-page">
 			<div className="cc-library-header">
 				<div className="cc-library-title-row">
 					<Boxes size={22} style={{ color: "var(--pi-accent, #5a8080)" }} />
 					<h2 className="cc-library-title">Бібліотека функцій</h2>
+					<div className="cc-library-scope-toggle">
+						<button
+							type="button"
+							className={`cc-library-scope-btn ${scope === "global" ? "active" : ""}`}
+							onClick={() => setScope("global")}
+							title="Глобальна бібліотека (між сесіями)"
+						>
+							<Globe size={14} /> Глобал
+						</button>
+						<button
+							type="button"
+							className={`cc-library-scope-btn ${scope === "session" ? "active" : ""}`}
+							onClick={() => setScope("session")}
+							title="Сесійні скрипти (поточна сесія)"
+						>
+							<FolderClock size={14} /> Сесія
+						</button>
+					</div>
 					<button
 						type="button"
 						className="btn btn-sm btn-primary cc-library-new-btn"
 						onClick={() => setShowCreate(true)}
+					disabled={scope === "session" && !activeSessionId}
 					>
 						<Plus size={15} /> Нова функція
 					</button>
 				</div>
 				<p className="cc-library-subtitle">
-					Self-growing skill library: агент будує перевикористовувані функції, шукає та компонує їх.
+					{scope === "global"
+						? "Self-growing skill library: загальні перевикористовувані функції між сесіями."
+						: activeSessionId
+							? "Сесійні скрипти — задачоспецифічні «чорновики» цієї сесії. Promote в глобал коли стане загальним."
+							: "Оберіть або створіть сесію для роботи зі сесійними скриптами."}
 				</p>
 			</div>
 
@@ -235,7 +306,8 @@ export default function LibraryPage(): React.ReactNode {
 			<div className="cc-library-layout">
 				{/* Ліва колонка: пошук + список */}
 				<div className="cc-library-left">
-					{/* Семантичний пошук */}
+					{/* Семантичний пошук (лише global) */}
+					{scope === "global" && (
 					<div className="cc-library-search-box">
 						<div className="cc-library-search-row">
 							<Search size={15} className="cc-library-search-icon" />
@@ -289,8 +361,7 @@ export default function LibraryPage(): React.ReactNode {
 							</div>
 						)}
 					</div>
-
-					{/* Фільтр + список */}
+					)}
 					<div className="cc-library-filter-row">
 						<input
 							type="text"
@@ -356,6 +427,17 @@ export default function LibraryPage(): React.ReactNode {
 									<Code2 size={18} /> {selected.name}
 								</h3>
 								<div className="cc-library-detail-actions">
+									{scope === "session" && (
+										<button
+											type="button"
+											className="btn btn-sm btn-outline-primary"
+											onClick={() => promote(selected.name)}
+											disabled={saving}
+											title="Опублікувати в глобальну бібліотеку"
+										>
+											<Upload size={14} /> → В глобал
+										</button>
+									)}
 									<button
 										type="button"
 										className="btn btn-sm btn-outline-danger"
@@ -456,6 +538,8 @@ export default function LibraryPage(): React.ReactNode {
 
 			{showCreate && (
 				<CreateFunctionDialog
+					scope={scope}
+					apiBase={apiBase}
 					onClose={() => setShowCreate(false)}
 					onCreated={(name) => { setShowCreate(false); void refresh(); void openFunction(name); }}
 				/>
@@ -468,9 +552,13 @@ export default function LibraryPage(): React.ReactNode {
 function CreateFunctionDialog({
 	onClose,
 	onCreated,
+	scope,
+	apiBase,
 }: {
 	onClose: () => void;
 	onCreated: (name: string) => void;
+	scope: Scope;
+	apiBase: string;
 }): React.ReactNode {
 	const [name, setName] = useState("");
 	const [description, setDescription] = useState("");
@@ -494,7 +582,7 @@ function CreateFunctionDialog({
 		}
 		setCreating(true);
 		try {
-			const res = await fetch("/api/library", {
+			const res = await fetch(apiBase, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
@@ -520,7 +608,7 @@ function CreateFunctionDialog({
 		<div className="cc-library-modal-overlay" onClick={onClose}>
 			<div className="cc-library-modal" onClick={(e) => e.stopPropagation()}>
 				<div className="cc-library-modal-header">
-					<h3><Plus size={18} /> Нова функція</h3>
+					<h3><Plus size={18} /> {scope === "session" ? "Новий сесійний скрипт" : "Нова функція"}</h3>
 					<button type="button" className="btn btn-link btn-sm p-0" onClick={onClose}>
 						<X size={18} />
 					</button>

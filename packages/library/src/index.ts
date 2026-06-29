@@ -4,7 +4,7 @@
  * Store + embeddings-пошук + контекст виконання з композицією (ctx.call).
  */
 
-export { LibraryStore, type LibraryStoreOptions } from "./store.ts";
+export { LibraryStore, SessionScriptStore, type LibraryStoreOptions } from "./store.ts";
 export { embed, cosine } from "./embeddings.ts";
 export type {
 	FunctionMeta,

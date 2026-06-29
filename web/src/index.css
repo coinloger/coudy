@@ -1239,3 +1239,36 @@ body {
 
 .spin { animation: cc-spin 0.8s linear infinite; }
 @keyframes cc-spin { to { transform: rotate(360deg); } }
+
+/* ===== Перемикач сфери Глобал/Сесія + promote ===== */
+.cc-library-scope-toggle {
+  display: inline-flex;
+  margin-left: auto;
+  margin-right: 0.75rem;
+  background: var(--pi-page-bg, #f1f3f5);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+.cc-library-scope-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: none;
+  background: transparent;
+  color: var(--pi-text-muted, #6c757d);
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.cc-library-scope-btn:hover {
+  color: var(--pi-text, #1f2328);
+}
+.cc-library-scope-btn.active {
+  background: #fff;
+  color: var(--pi-accent, #5a8080);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}

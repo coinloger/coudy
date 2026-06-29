@@ -16,11 +16,27 @@ import { Type, type Static } from "typebox";
 import type { AgentTool } from "@coudycode/agent-core";
 import { wrapToolDefinition } from "@coudycode/tools";
 import type { ToolDefinition } from "@coudycode/tools";
-import { LibraryStore } from "@coudycode/library";
+import { LibraryStore, SessionScriptStore } from "@coudycode/library";
 import { processRegistry } from "./processes.js";
 
 /** Глобальний singleton store бібліотеки (один на сервер). */
 export const libraryStore = new LibraryStore({ rootDir: LibraryStore.coudyDir() });
+
+/**
+ * Кеш сесійних store-ів: один SessionScriptStore на сесію (теплі кеші модулів).
+ * SessionScriptStore підключений до глобального store для композиції session→global.
+ */
+const sessionStores = new Map<string, SessionScriptStore>();
+
+/** Отримати (створити за потреби) сесійний store для sessionId. */
+export function getSessionScriptStore(sessionId: string): SessionScriptStore {
+	let s = sessionStores.get(sessionId);
+	if (!s) {
+		s = new SessionScriptStore(sessionId, libraryStore);
+		sessionStores.set(sessionId, s);
+	}
+	return s;
+}
 
 /**
  * Стан примусового search-flow: per-session флаг «був search у цьому ході».
@@ -98,6 +114,40 @@ const modifySchema = Type.Object({
 });
 const listSchema = Type.Object({
 	category: Type.Optional(Type.String({ description: "Фільтр за категорією (опц.)." })),
+});
+
+// ===== Schemas для сесійних скриптів =====
+
+const sessionCreateSchema = Type.Object({
+	name: Type.String({ description: "Унікальне імʼя сесійного скрипта всередині сесії." }),
+	description: Type.String({ description: "Опис що робить скрипт." }),
+	params: Type.Optional(Type.Record(Type.String(), Type.Object({
+		type: Type.Union([Type.Literal("string"), Type.Literal("number"), Type.Literal("boolean")]),
+		required: Type.Optional(Type.Boolean()),
+		desc: Type.Optional(Type.String()),
+	}), { description: "Контракт параметрів (опц.)." })),
+	code: Type.String({ description: "Код ESM-модуля: export const meta + export async function run(params, ctx). ctx.call(name, params, {scope}) резолвить session→global." }),
+	tags: Type.Optional(Type.Array(Type.String())),
+});
+const sessionCallSchema = Type.Object({
+	name: Type.String({ description: "Імʼя сесійного скрипта для виклику." }),
+	params: Type.Record(Type.String(), Type.Unknown(), { description: "Параметри скрипта (обʼєкт ключ→значення)." }),
+});
+const sessionModifySchema = Type.Object({
+	name: Type.String({ description: "Імʼя сесійного скрипта для оновлення." }),
+	description: Type.Optional(Type.String()),
+	params: Type.Optional(Type.Record(Type.String(), Type.Object({
+		type: Type.Union([Type.Literal("string"), Type.Literal("number"), Type.Literal("boolean")]),
+		required: Type.Optional(Type.Boolean()),
+		desc: Type.Optional(Type.String()),
+	}))),
+	code: Type.Optional(Type.String()),
+	tags: Type.Optional(Type.Array(Type.String())),
+});
+const sessionListSchema = Type.Object({});
+const promoteSchema = Type.Object({
+	name: Type.String({ description: "Імʼя сесійного скрипта для публікації в глобальну бібліотеку." }),
+	category: Type.Optional(Type.String({ description: "Категорія в глобалі (опц.)." })),
 });
 
 /**
@@ -231,6 +281,117 @@ export function createLibraryTools(sessionId: string, cwd: string): AgentTool[] 
 					(e) => `${e.name} [${e.category ?? "uncat"}]: ${e.description}`,
 				);
 				return { content: [{ type: "text", text: `Функцій: ${entries.length}\n${lines.join("\n")}` }], details: { entries } };
+			},
+		},
+
+		// ===== Сесійні скрипти (задачоспецифічні «чорновики») =====
+
+		{
+			name: "session_script_create",
+			label: "session_script_create",
+			description:
+				"Створити сесійний скрипт — задачоспецифічну логіку, що живе з сесією (НЕ засмічує глобал). " +
+				"Без вимоги library_search. Для разового/специфічного. Може викликати інші через ctx.call.",
+			promptSnippet: "Create a session-scoped script",
+			parameters: sessionCreateSchema,
+			async execute(_id, params: Static<typeof sessionCreateSchema>) {
+				const store = getSessionScriptStore(sessionId);
+				const entry = await store.create({
+					name: params.name,
+					description: params.description,
+					params: params.params,
+					code: params.code,
+					tags: params.tags,
+				});
+				return {
+					content: [{ type: "text", text: `Створено сесійний скрипт "${entry.name}". Виклич через session_script_call. Якщо виявиться загальним — promote_to_global.` }],
+					details: { created: true, entry: { ...entry, embedding: undefined } },
+				};
+			},
+		},
+		{
+			name: "session_script_call",
+			label: "session_script_call",
+			description:
+				"Виконати сесійний скрипт за імʼям з params. Без обмежень.",
+			promptSnippet: "Call a session script",
+			parameters: sessionCallSchema,
+			async execute(_id, params: Static<typeof sessionCallSchema>) {
+				const store = getSessionScriptStore(sessionId);
+				const result = await store.run(params.name, params.params, deps);
+				const text = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+				return { content: [{ type: "text", text }], details: { result } };
+			},
+		},
+		{
+			name: "session_script_modify",
+			label: "session_script_modify",
+			description:
+				"Оновити сесійний скрипт (code/description/params/tags). Без вимоги search.",
+			promptSnippet: "Modify a session script",
+			parameters: sessionModifySchema,
+			async execute(_id, params: Static<typeof sessionModifySchema>) {
+				const store = getSessionScriptStore(sessionId);
+				const entry = await store.update(params.name, {
+					description: params.description,
+					params: params.params,
+					code: params.code,
+					tags: params.tags,
+				});
+				if (!entry) {
+					return { content: [{ type: "text", text: `Сесійний скрипт "${params.name}" не знайдено.` }], details: { modified: false } };
+				}
+				return { content: [{ type: "text", text: `Оновлено сесійний скрипт "${entry.name}".` }], details: { modified: true } };
+			},
+		},
+		{
+			name: "session_script_list",
+			label: "session_script_list",
+			description: "Список сесійних скриптів поточної сесії.",
+			promptSnippet: "List session scripts",
+			parameters: sessionListSchema,
+			async execute() {
+				const store = getSessionScriptStore(sessionId);
+				const entries = store.list();
+				if (entries.length === 0) {
+					return { content: [{ type: "text", text: "Сесійних скриптів немає." }], details: { entries: [] } };
+				}
+				const lines = entries.map((e) => `${e.name}: ${e.description}`);
+				return { content: [{ type: "text", text: `Сесійних скриптів: ${entries.length}\n${lines.join("\n")}` }], details: { entries } };
+			},
+		},
+		{
+			name: "promote_to_global",
+			label: "promote_to_global",
+			description:
+				"Опублікувати сесійний скрипт у глобальну бібліотеку (дія куратора). ОБХОДИТЬ search-flow. " +
+				"Використовуй коли сесійний скрипт виявився загальним. Якщо global name вже існує — помилка 409.",
+			promptSnippet: "Promote a session script to global",
+			parameters: promoteSchema,
+			async execute(_id, params: Static<typeof promoteSchema>) {
+				const store = getSessionScriptStore(sessionId);
+				const entry = store.get(params.name);
+				if (!entry) {
+					return { content: [{ type: "text", text: `Сесійний скрипт "${params.name}" не знайдено.` }], details: { promoted: false } };
+				}
+				const code = store.readCode(params.name) ?? "";
+				try {
+					const promoted = await libraryStore.create({
+						name: params.name,
+						description: entry.description,
+						params: entry.params,
+						code,
+						category: params.category,
+						tags: entry.tags,
+					});
+					return {
+						content: [{ type: "text", text: `Опубліковано "${promoted.name}" в глобальну бібліотеку [${promoted.category ?? "uncat"}]. Тепер доступна через library_call.` }],
+						details: { promoted: true, entry: { ...promoted, embedding: undefined } },
+					};
+				} catch (e) {
+					const msg = e instanceof Error ? e.message : String(e);
+					return { content: [{ type: "text", text: `Не вдалося опублікувати: ${msg}` }], details: { promoted: false, error: msg } };
+				}
 			},
 		},
 	];
@@ -406,4 +567,160 @@ export async function warmupEmbeddings(): Promise<void> {
 }
 
 /** Re-export для інших модулів сервера. */
-export { LibraryStore };
+export { LibraryStore, SessionScriptStore };
+
+// ===== HTTP-хендлери сесійних скриптів (CRUD + run + promote) =====
+// Сховище: ~/.coudycode/session-scripts/<sessionId>/
+
+/** GET /api/sessions/:id/scripts — список сесійних скриптів. */
+export function handleSessionScriptList(req: IncomingMessage, res: ServerResponse, sessionId: string): boolean {
+	if (req.method !== "GET") return false;
+	const store = getSessionScriptStore(sessionId);
+	const entries = store.list();
+	sendJson(res, 200, {
+		scripts: entries.map((e) => ({
+			name: e.name,
+			category: e.category,
+			description: e.description,
+			params: e.params,
+			tags: e.tags,
+			createdAt: e.createdAt,
+			updatedAt: e.updatedAt,
+		})),
+	});
+	return true;
+}
+
+/** GET /api/sessions/:id/scripts/:name — один сесійний скрипт (з кодом). */
+export function handleSessionScriptGet(req: IncomingMessage, res: ServerResponse, sessionId: string, name: string): boolean {
+	if (req.method !== "GET") return false;
+	const store = getSessionScriptStore(sessionId);
+	const entry = store.get(name);
+	if (!entry) {
+		sendJson(res, 404, { error: "Сесійний скрипт не знайдено" });
+		return true;
+	}
+	const code = store.readCode(name) ?? "";
+	sendJson(res, 200, {
+		name: entry.name,
+		category: entry.category,
+		description: entry.description,
+		params: entry.params,
+		tags: entry.tags,
+		code,
+		createdAt: entry.createdAt,
+		updatedAt: entry.updatedAt,
+	});
+	return true;
+}
+
+/** POST /api/sessions/:id/scripts — create сесійного скрипта. */
+export async function handleSessionScriptCreate(req: IncomingMessage, res: ServerResponse, sessionId: string): Promise<boolean> {
+	if (req.method !== "POST") return false;
+	const body = await readBody(req);
+	const name = typeof body?.name === "string" ? body.name : null;
+	const description = typeof body?.description === "string" ? body.description : null;
+	const code = typeof body?.code === "string" ? body.code : null;
+	if (!name || !description || !code) {
+		sendJson(res, 400, { error: "Потрібні поля name, description, code" });
+		return true;
+	}
+	const tags = Array.isArray(body?.tags) ? (body.tags as unknown[]).filter((t): t is string => typeof t === "string") : [];
+	const params = body?.params && typeof body.params === "object" ? (body.params as Record<string, unknown>) : undefined;
+	const store = getSessionScriptStore(sessionId);
+	try {
+		const entry = await store.create({ name, description, code, tags, params: params as never });
+		sendJson(res, 201, { ...entry, embedding: undefined });
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		const status = msg.includes("вже існує") ? 409 : 400;
+		sendJson(res, status, { error: msg });
+	}
+	return true;
+}
+
+/** PATCH /api/sessions/:id/scripts/:name — modify сесійного скрипта. */
+export async function handleSessionScriptUpdate(req: IncomingMessage, res: ServerResponse, sessionId: string, name: string): Promise<boolean> {
+	if (req.method !== "PATCH") return false;
+	const body = await readBody(req);
+	const patch: {
+		description?: string;
+		params?: Record<string, unknown>;
+		code?: string;
+		category?: string;
+		tags?: string[];
+	} = {};
+	if (typeof body?.description === "string") patch.description = body.description;
+	if (typeof body?.code === "string") patch.code = body.code;
+	if (typeof body?.category === "string") patch.category = body.category;
+	if (Array.isArray(body?.tags)) patch.tags = (body.tags as unknown[]).filter((t): t is string => typeof t === "string");
+	if (body?.params && typeof body.params === "object") patch.params = body.params as Record<string, unknown>;
+	const store = getSessionScriptStore(sessionId);
+	const entry = await store.update(name, patch as { description?: string; params?: import("@coudycode/library").ParamsSpec; code?: string; category?: string; tags?: string[] });
+	if (!entry) {
+		sendJson(res, 404, { error: "Сесійний скрипт не знайдено" });
+		return true;
+	}
+	sendJson(res, 200, { ...entry, embedding: undefined });
+	return true;
+}
+
+/** DELETE /api/sessions/:id/scripts/:name — delete сесійного скрипта. */
+export function handleSessionScriptDelete(req: IncomingMessage, res: ServerResponse, sessionId: string, name: string): boolean {
+	if (req.method !== "DELETE") return false;
+	const store = getSessionScriptStore(sessionId);
+	const ok = store.delete(name);
+	if (!ok) {
+		sendJson(res, 404, { error: "Сесійний скрипт не знайдено" });
+		return true;
+	}
+	sendJson(res, 200, { ok: true });
+	return true;
+}
+
+/** POST /api/sessions/:id/scripts/:name/run body {params} — виконати сесійний скрипт. */
+export async function handleSessionScriptRun(req: IncomingMessage, res: ServerResponse, sessionId: string, name: string): Promise<boolean> {
+	if (req.method !== "POST") return false;
+	const body = await readBody(req);
+	const params = body?.params && typeof body.params === "object" ? (body.params as Record<string, unknown>) : {};
+	const store = getSessionScriptStore(sessionId);
+	try {
+		const result = await store.run(name, params, libDeps(process.cwd()));
+		sendJson(res, 200, { result });
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		const status = msg.includes("не знайдено") ? 404 : 500;
+		sendJson(res, status, { error: msg });
+	}
+	return true;
+}
+
+/** POST /api/sessions/:id/scripts/:name/promote — копіювати сесійний скрипт у глобал. */
+export async function handleSessionScriptPromote(req: IncomingMessage, res: ServerResponse, sessionId: string, name: string): Promise<boolean> {
+	if (req.method !== "POST") return false;
+	const body = await readBody(req);
+	const store = getSessionScriptStore(sessionId);
+	const entry = store.get(name);
+	if (!entry) {
+		sendJson(res, 404, { error: "Сесійний скрипт не знайдено" });
+		return true;
+	}
+	const code = store.readCode(name) ?? "";
+	const category = typeof body?.category === "string" && body.category.trim() ? body.category.trim() : undefined;
+	try {
+		const promoted = await libraryStore.create({
+			name,
+			description: entry.description,
+			params: entry.params,
+			code,
+			category,
+			tags: entry.tags,
+		});
+		sendJson(res, 201, { ...promoted, embedding: undefined });
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		const status = msg.includes("вже існує") ? 409 : 400;
+		sendJson(res, status, { error: msg });
+	}
+	return true;
+}

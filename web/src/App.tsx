@@ -206,7 +206,7 @@ export default function App(): React.ReactNode {
           <Route path="/" element={<Dashboard widgets={ui.dashboardWidgets} />} />
           <Route path="/dashboard" element={<Dashboard widgets={ui.dashboardWidgets} />} />
           <Route path="/plugins" element={<PluginManager />} />
-          <Route path="/library" element={<LibraryPage />} />
+          <Route path="/library" element={<LibraryPage activeSessionId={sessions.activeId} sessions={sessions.sessions} />} />
           <Route path="/settings" element={<Settings tabs={ui.settingsTabs} />} />
           <Route path="/playground" element={<Playground />} />
           <Route

@@ -43,6 +43,13 @@ import {
 	handleLibraryUpdate,
 	handleLibraryDelete,
 	handleLibraryRun,
+	handleSessionScriptList,
+	handleSessionScriptGet,
+	handleSessionScriptCreate,
+	handleSessionScriptUpdate,
+	handleSessionScriptDelete,
+	handleSessionScriptRun,
+	handleSessionScriptPromote,
 	warmupEmbeddings,
 } from "./library.js";
 
@@ -875,6 +882,58 @@ export class CoudyServer {
       this.sessionPromptBindings.remove(id);
       this.sendJson(res, 200, { ok: true });
       return;
+    }
+
+    // === Сесійні скрипти (session-scoped skill library) ===
+
+    // POST /api/sessions/:id/scripts — create сесійного скрипта.
+    const sessionScriptBaseMatch = /^\/api\/sessions\/([^/]+)\/scripts$/.exec(pathname);
+    if (method === "POST" && sessionScriptBaseMatch) {
+      const sid = decodeURIComponent(sessionScriptBaseMatch[1]);
+      await handleSessionScriptCreate(req, res, sid);
+      return;
+    }
+    // GET /api/sessions/:id/scripts — список сесійних скриптів.
+    if (method === "GET" && sessionScriptBaseMatch) {
+      const sid = decodeURIComponent(sessionScriptBaseMatch[1]);
+      handleSessionScriptList(req, res, sid);
+      return;
+    }
+
+    // POST /api/sessions/:id/scripts/:name/run body {params} — виконати.
+    const sessionScriptRunMatch = /^\/api\/sessions\/([^/]+)\/scripts\/([^/]+)\/run$/.exec(pathname);
+    if (method === "POST" && sessionScriptRunMatch) {
+      const sid = decodeURIComponent(sessionScriptRunMatch[1]);
+      const sname = decodeURIComponent(sessionScriptRunMatch[2]);
+      await handleSessionScriptRun(req, res, sid, sname);
+      return;
+    }
+    // POST /api/sessions/:id/scripts/:name/promote — копіювати в глобал.
+    const sessionScriptPromoteMatch = /^\/api\/sessions\/([^/]+)\/scripts\/([^/]+)\/promote$/.exec(pathname);
+    if (method === "POST" && sessionScriptPromoteMatch) {
+      const sid = decodeURIComponent(sessionScriptPromoteMatch[1]);
+      const sname = decodeURIComponent(sessionScriptPromoteMatch[2]);
+      await handleSessionScriptPromote(req, res, sid, sname);
+      return;
+    }
+
+    // /api/sessions/:id/scripts/:name — GET (з кодом) / PATCH / DELETE.
+    const sessionScriptItemMatch = /^\/api\/sessions\/([^/]+)\/scripts\/([^/]+)$/.exec(pathname);
+    if (sessionScriptItemMatch) {
+      const sid = decodeURIComponent(sessionScriptItemMatch[1]);
+      const sname = decodeURIComponent(sessionScriptItemMatch[2]);
+      if (method === "GET") {
+        handleSessionScriptGet(req, res, sid, sname);
+        return;
+      }
+      if (method === "PATCH") {
+        await handleSessionScriptUpdate(req, res, sid, sname);
+        return;
+      }
+      if (method === "DELETE") {
+        handleSessionScriptDelete(req, res, sid, sname);
+        return;
+      }
     }
 
     // Плагінні HTTP-роути (server:routes filter). Збіг по method + точний path.

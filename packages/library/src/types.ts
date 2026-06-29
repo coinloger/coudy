@@ -66,10 +66,15 @@ export interface LibraryCtx {
 		resolve(p: string): string;
 	};
 	/**
-	 * КОМПОЗИЦІЯ: викликати інший метод бібліотеки за імʼям з params.
-	 * Дозволяє функціям перевикористовувати одна одну.
+	 * КОМПОЗИЦІЯ: викликати інший метод за імʼям з params.
+	 * Сесійний контекст резолвить session→global (більш специфічне виграє);
+	 * глобальний — лише global. opts.scope дозволяє обрати рівень явно.
 	 */
-	call(name: string, params: Record<string, unknown>): Promise<unknown>;
+	call(
+		name: string,
+		params: Record<string, unknown>,
+		opts?: { scope?: "session" | "global" | "auto" },
+	): Promise<unknown>;
 }
 
 /** Запис маніфесту index.json (без коду). */
