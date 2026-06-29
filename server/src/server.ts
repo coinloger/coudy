@@ -64,6 +64,35 @@ export class CoudyServer {
   // Plugin-owned ізольовані сесії (declareSession).
   private readonly pluginSessionRegistry = new PluginSessionRegistryImpl();
   private readonly pluginSessionStore = new PluginSessionStore();
+  // Per-session lock: запущені harness-и (фоновий агент). Ключ — sessionId.
+  private readonly runningChat = new Map<string, { abort: () => void }>();
+
+  /**
+   * Per-session lock для чат-запуску.
+   * tryStart → false якщо сесія вже працює (409 «session busy»).
+   * finish — у finally після завершення run. abortSession — явний стоп (POST /abort).
+   */
+  tryStartChat(sessionId: string, abort: () => void): boolean {
+    if (this.runningChat.has(sessionId)) return false;
+    this.runningChat.set(sessionId, { abort });
+    return true;
+  }
+
+  finishChat(sessionId: string): void {
+    this.runningChat.delete(sessionId);
+  }
+
+  abortChat(sessionId: string): boolean {
+    const entry = this.runningChat.get(sessionId);
+    if (!entry) return false;
+    try { entry.abort(); } catch { /* ignore */ }
+    this.runningChat.delete(sessionId);
+    return true;
+  }
+
+  isChatRunning(sessionId: string): boolean {
+    return this.runningChat.has(sessionId);
+  }
 
   constructor(opts: CoudyServerOptions) {
     this.hooks = new HookEngine();
@@ -648,6 +677,10 @@ export class CoudyServer {
         this.sessionPromptBindings,
         this.pluginSessionRegistry,
         this.pluginSessionStore,
+        {
+          tryStart: (sid, abort) => this.tryStartChat(sid, abort),
+          finish: (sid) => this.finishChat(sid),
+        },
       );
       return;
     }
@@ -708,6 +741,15 @@ export class CoudyServer {
         return;
       }
       this.sendJson(res, 200, updated);
+      return;
+    }
+
+    // POST /api/sessions/:id/abort — зупинити фоновий агент цієї сесії.
+    const sessionAbortMatch = /^\/api\/sessions\/([^/]+)\/abort$/.exec(pathname);
+    if (method === "POST" && sessionAbortMatch) {
+      const id = decodeURIComponent(sessionAbortMatch[1]);
+      const ok = this.abortChat(id);
+      this.sendJson(res, ok ? 200 : 404, ok ? { aborted: id } : { error: "Сесія не виконується" });
       return;
     }
 

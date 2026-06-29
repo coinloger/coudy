@@ -916,3 +916,101 @@ body {
 	padding: 8px 10px;
 	border-top: 1px solid var(--pi-border-muted, #e8e8e8);
 }
+
+/* ===== Toast-сповіщення ===== */
+.cc-toast-container {
+	position: fixed;
+	bottom: 20px;
+	right: 20px;
+	z-index: 2000;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	max-width: 360px;
+}
+
+.cc-toast {
+	display: flex;
+	align-items: stretch;
+	gap: 0;
+	background: var(--pi-card-bg, #fff);
+	border: 1px solid var(--pi-border-muted, #d0d0d0);
+	border-left: 3px solid var(--pi-success, #2da44e);
+	border-radius: 8px;
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+	overflow: hidden;
+	animation: cc-toast-in 0.2s ease-out;
+}
+
+@keyframes cc-toast-in {
+	from { opacity: 0; transform: translateX(20px); }
+	to { opacity: 1; transform: translateX(0); }
+}
+
+.cc-toast-body {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 12px;
+	background: none;
+	border: none;
+	text-align: left;
+	cursor: pointer;
+	flex: 1;
+	min-width: 0;
+	color: var(--pi-text, #1f2328);
+}
+
+.cc-toast-body:hover {
+	background: var(--pi-page-bg, #f8f8f8);
+}
+
+.cc-toast-icon {
+	color: var(--pi-success, #2da44e);
+	flex-shrink: 0;
+}
+
+.cc-toast-text {
+	min-width: 0;
+}
+
+.cc-toast-title {
+	font-size: 14px;
+	line-height: 1.3;
+}
+
+.cc-toast-sub {
+	font-size: 12px;
+}
+
+.cc-toast-close {
+	background: none;
+	border: none;
+	border-left: 1px solid var(--pi-border-muted, #e8e8e8);
+	padding: 0 10px;
+	cursor: pointer;
+	color: var(--pi-text-muted, #6c6c6c);
+	flex-shrink: 0;
+}
+
+.cc-toast-close:hover {
+	color: var(--pi-text, #1f2328);
+	background: var(--pi-page-bg, #f8f8f8);
+}
+
+/* ===== Індикатор фонового агенту в Sidebar ===== */
+.cc-sidebar-running-dot {
+	display: inline-block;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--pi-success, #2da44e);
+	margin-left: auto;
+	animation: cc-sidebar-pulse 1.4s ease-in-out infinite;
+	flex-shrink: 0;
+}
+
+@keyframes cc-sidebar-pulse {
+	0%, 100% { opacity: 1; transform: scale(1); }
+	50% { opacity: 0.3; transform: scale(0.6); }
+}

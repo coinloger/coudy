@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import Dashboard from "./Dashboard";
 import PluginManager from "./PluginManager";
@@ -7,6 +7,8 @@ import ChatView from "./ChatView";
 import Settings from "./Settings";
 import Playground from "./playground/Playground";
 import CommandPalette from "./CommandPalette";
+import { ToastContainer, toastStore } from "./Toast";
+import { sessionRunner } from "./session-runner";
 import { useCoudyUI } from "./useCoudyUI";
 import { useSessions } from "./sessions";
 import type {
@@ -209,6 +211,10 @@ export default function App(): React.ReactNode {
         </Routes>
       </main>
 
+      {/* Toast-сповіщення завершення фонового агенту + контейнер. */}
+      <ToastWatcher />
+      <ToastContainer />
+
       {/* Командна палітра (⌘K / Ctrl+K) — глобальна, поза роутами. */}
       <CommandPalette
         open={paletteOpen}
@@ -217,6 +223,35 @@ export default function App(): React.ReactNode {
       />
     </div>
   );
+}
+
+/**
+ * ToastWatcher — підписується на завершення фонових агентів (один раз при маунті).
+ * Показує toast ТІЛЬКИ якщо користувач НЕ в тому чаті; клік → перехід у чат.
+ */
+function ToastWatcher(): React.ReactNode {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const currentRef = useRef<string | null>(null);
+
+  // Витягнути sessionId з pathname «/chat/:sessionId».
+  const m = /^\/chat\/([^/]+)/.exec(location.pathname);
+  currentRef.current = m ? decodeURIComponent(m[1]) : null;
+
+  useEffect(() => {
+    return sessionRunner.subscribeAll((ev) => {
+      if (ev.type !== "done") return;
+      // Toast лише якщо НЕ в тому чаті зараз.
+      if (currentRef.current === ev.sessionId) return;
+      toastStore.push({
+        title: "Агент завершив відповідь",
+        body: "Натисніть, щоб відкрити чат",
+        onClick: () => navigate(`/chat/${ev.sessionId}`),
+      });
+    });
+  }, [navigate]);
+
+  return null;
 }
 
 /** Маршрут чату: сесія за /chat/:sessionId з URL. ChatView самостійний (завантажує історію + SSE). */

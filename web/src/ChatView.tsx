@@ -1,20 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Send, Square, Gauge, Layers } from "lucide-react";
-import type { AgentEvent, AgentMessage } from "@coudycode/agent-core";
+import type { AgentMessage } from "@coudycode/agent-core";
 import type { ToolCall as ToolCallContent } from "@coudycode/ai";
 import {
 	ConversationView,
-	applyEvent,
-	initialConversationState,
 	ToolCall,
-	type ConversationState,
 	type ToolCallStatus,
 } from "@coudycode/ui";
 import "@coudycode/ui/styles.css";
-import { streamChat } from "./chat-stream";
 import { ModelSelector, type CurrentModel, type ProviderGroup } from "./ModelSelector";
 import { ProcessBar } from "./ProcessBar";
 import { PromptSelector, type PromptTemplateEntry } from "./PromptSelector";
+import { useSessionRunner } from "./useSessionRunner";
+import { sessionRunner } from "./session-runner";
 import type { ChatPanel, MessageAction } from "./types";
 
 interface ChatViewProps {
@@ -63,14 +61,12 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 		contextWindow: number;
 		pct: number;
 	} | null>(null);
-	// Поточний хід (стрімиться).
-	const [live, setLive] = useState<ConversationState>(initialConversationState);
-
+	// Поточний хід (стрімиться) — з SessionRunner (фоновий агент, переживає навігацію).
+	const { working: live, running, error: runError, start: runnerStart, abort: runnerAbort } = useSessionRunner(sessionId);
 	const [input, setInput] = useState("");
-	const [running, setRunning] = useState(false);
 	const [compaction, setCompaction] = useState<CompactionState | null>(null);
+	const [compacting, setCompacting] = useState(false);
 	const [panelsOpen, setPanelsOpen] = useState(true);
-	const [error, setError] = useState<string | null>(null);
 
 	// Вибір моделі (поточна + каталог підключених провайдерів).
 	const [currentModel, setCurrentModel] = useState<CurrentModel | null>(null);
@@ -79,13 +75,12 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 	const [currentPrompt, setCurrentPrompt] = useState<{ id: string; name: string } | null>(null);
 	const [promptTemplates, setPromptTemplates] = useState<PromptTemplateEntry[]>([]);
 
-	const workingRef = useRef<ConversationState>(initialConversationState);
-	const abortRef = useRef<AbortController | null>(null);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const stickRef = useRef(true);
 
 	const messages: AgentMessage[] = [...committed, ...live.messages];
 	const toolStatus: Record<string, ToolCallStatus> = { ...committedStatus, ...live.toolStatus };
+	const error = runError;
 
 	// Завантажити історію сесії при зміні sessionId.
 	const loadSession = useCallback(async () => {
@@ -93,16 +88,17 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 			const r = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`);
 			if (!r.ok) return;
 			const s = (await r.json()) as ServerSession;
-			setCommitted(s.messages ?? []);
-			setCommittedStatus({});
+			// Якщо зараз стрімиться фоновий агент — НЕ перезаписувати committed його повідомленнями
+			// (вони вже в live через SessionRunner); оновити лише метадані.
+			if (!sessionRunner.isRunning(sessionId)) {
+				setCommitted(s.messages ?? []);
+				setCommittedStatus({});
+			}
 			setTitle(s.name ?? "Чат");
 			setCurrentModel(s.model ?? null);
 			setContextUsage(s.contextUsage ?? null);
 			setCurrentPrompt(s.promptTemplate ?? null);
-			setLive(initialConversationState);
-			workingRef.current = initialConversationState;
 			setCompaction(null);
-			setError(null);
 			stickRef.current = true;
 		} catch {
 			/* ignore */
@@ -188,92 +184,40 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 		}
 	}, [messages, live.streamingMessage]);
 
-	const onEvent = (event: AgentEvent): void => {
-		if (event.type === "agent_end") {
-			// Дописати акумульовані повідомлення ходу в історію.
-			const turn = workingRef.current;
-			setCommitted((prev) => [...prev, ...turn.messages]);
-			setCommittedStatus((prev) => ({ ...prev, ...turn.toolStatus }));
-			workingRef.current = initialConversationState;
-			setLive(initialConversationState);
-			// Оновити contextUsage/title після відповіді агента.
+	// При завершенні фонового агенту (running true→false) — підтягнути персистовані повідомлення.
+	const prevRunning = useRef(false);
+	useEffect(() => {
+		if (prevRunning.current && !running) {
+			// Фоновий агент завершився (або зупинився): підтягнути персистовані повідомлення,
+			// потім скинути live-стан SessionRunner (щоб уникнути дублю з committed).
+			void loadSession().then(() => sessionRunner.clear(sessionId));
 			void refreshSessionMeta();
-			return;
 		}
-		// session_compact (від AgentHarness): позначити tool call done + оновити сесію.
-		// @ts-expect-error — session_compact є AgentHarnessEvent, не базовий AgentEvent на клієнті.
-		if (event.type === "session_compact") {
-			const entry = (event as { compactionEntry?: { summary?: string; tokensBefore?: number } }).compactionEntry;
-			setCompaction({
-				status: "done",
-				summary: entry?.summary,
-				tokensBefore: entry?.tokensBefore,
-			});
-			void loadSession();
-			return;
-		}
-		// @ts-expect-error — compaction_start від бекенду ДО виклику LLM compact.
-		if (event.type === "compaction_start") {
-			setCompaction({ status: "running" });
-			stickRef.current = true;
-			return;
-		}
-		// @ts-expect-error — error-подія не частина AgentEvent-юніону (бекенд додає {type:"error"}).
-		if (event.type === "error" && typeof (event as { message?: string }).message === "string") {
-			setError((event as { message: string }).message);
-			return;
-		}
-		workingRef.current = applyEvent(workingRef.current, event);
-		setLive({ ...workingRef.current });
-	};
+		prevRunning.current = running;
+	}, [running, loadSession, refreshSessionMeta, sessionId]);
+
+	// session_compact / compaction_start (від бекенду всередині чат-стріму) не мають окремого хендлера
+	// тепер — але авто-compact вже стрімиться через той самий SSE, і SessionRunner його застосовує.
+	// Ручна компактація окремим ендпоінтом — див. handleCompact нижче.
 
 	const startStream = (message: string): void => {
 		if (!message || running) return;
-		setError(null);
 		setInput("");
-		setRunning(true);
-		workingRef.current = initialConversationState;
-		// Прелоудер одразу при відправці (до першої AgentEvent / agent_start).
-		setLive({ ...initialConversationState, working: true });
 		stickRef.current = true;
-		const controller = new AbortController();
-		abortRef.current = controller;
-		streamChat({ sessionId, message, signal: controller.signal }, onEvent)
-			.catch(() => {
-				/* переривання або помилка мережі */
-			})
-			.finally(() => {
-				// Partial-повідомлення цього ходу комітимо як є (якщо стрім обірвався до agent_end).
-				const turn = workingRef.current;
-				if (turn.streamingMessage || turn.messages.length > 0) {
-					const msgs = [...turn.messages];
-					if (turn.streamingMessage) msgs.push(turn.streamingMessage);
-					const statuses = { ...turn.toolStatus };
-					for (const k of Object.keys(statuses)) {
-						if (statuses[k] === "running") statuses[k] = "done";
-					}
-					setCommitted((prev) => [...prev, ...msgs]);
-					setCommittedStatus((prev) => ({ ...prev, ...statuses }));
-				}
-				workingRef.current = initialConversationState;
-				setLive(initialConversationState);
-				setRunning(false);
-				abortRef.current = null;
-			});
+		runnerStart(message);
 	};
 
 	const handleStop = (): void => {
-		abortRef.current?.abort();
+		runnerAbort();
 	};
 
 	/** Ручна компактація: POST /api/sessions/:id/compact (SSE) → оновити сесію. */
 	const handleCompact = (): void => {
-		if (running || compaction) return;
+		if (running || compacting || compaction) return;
 		setCompaction({ status: "running" });
-		setRunning(true);
+		setCompacting(true);
 		stickRef.current = true;
 		const controller = new AbortController();
-		abortRef.current = controller;
 		fetch(`/api/sessions/${encodeURIComponent(sessionId)}/compact`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
@@ -309,7 +253,6 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 										void loadSession();
 									} else if (ev.type === "error") {
 										setCompaction(null);
-										setError(ev.message);
 									}
 								} catch {
 									/* ignore */
@@ -322,9 +265,8 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 			})
 			.catch(() => undefined)
 			.finally(() => {
-				setRunning(false);
+				setCompacting(false);
 				setCompaction((prev) => (prev?.status === "done" ? prev : null));
-				abortRef.current = null;
 			});
 	};
 

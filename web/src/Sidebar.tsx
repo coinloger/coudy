@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   Box,
@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import type { SidebarItem } from "./types";
 import type { ChatSession } from "./sessions";
+import { sessionRunner } from "./session-runner";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -49,6 +50,22 @@ const ICON_MAP: Record<string, LucideIcon> = {
 function resolveIcon(name?: string): LucideIcon {
   if (name && ICON_MAP[name]) return ICON_MAP[name];
   return LayoutGrid;
+}
+
+/** Set сталого посилання на порожній список (для useSyncExternalStore). */
+const EMPTY: string[] = [];
+
+/** Сесії, що зараз стрімляться (для пульсуючого індикатора в Sidebar). */
+function useRunningSessions(): Set<string> {
+  const ids = useSyncExternalStore(
+    (cb) => sessionRunner.subscribeAll(cb),
+    () => {
+      const r = sessionRunner.runningIds();
+      return r.length ? r.join("\u0000") : "";
+    },
+    () => "",
+  );
+  return new Set(ids ? ids.split("\u0000") : EMPTY);
 }
 
 /** Вбудовані пункти футера (Дашборд/Плагіни/Налаштування) — шляхи маршрутизації. */
@@ -112,6 +129,7 @@ export default function Sidebar(props: SidebarProps): React.ReactNode {
   const navigate = useNavigate();
   const location = useLocation();
   const [query, setQuery] = useState("");
+  const running = useRunningSessions();
 
   const filteredSessions = query.trim()
     ? sessions.filter((s) => s.title.toLowerCase().includes(query.trim().toLowerCase()))
@@ -209,17 +227,22 @@ export default function Sidebar(props: SidebarProps): React.ReactNode {
                 label={s.title}
                 onClick={() => onSelectSession(s.id)}
                 trailing={
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-link text-secondary p-0 flex-shrink-0"
-                    title="Видалити"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteSession(s.id);
-                    }}
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  <>
+                    {running.has(s.id) && (
+                      <span className="cc-sidebar-running-dot" title="Працює у фоні" />
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-link text-secondary p-0 flex-shrink-0"
+                      title="Видалити"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteSession(s.id);
+                      }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </>
                 }
               />
             </li>

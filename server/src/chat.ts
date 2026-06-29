@@ -258,6 +258,12 @@ function resolveTemplate(
 	return { content: template.content, tools: template.tools ?? null };
 }
 
+/** Per-session lock для чат-запуску (фоновий агент; дубль-старт → 409). */
+export interface ChatLock {
+	tryStart(sessionId: string, abort: () => void): boolean;
+	finish(sessionId: string): void;
+}
+
 /** Встановити SSE-заголовки. */
 function initSSE(res: ServerResponse): void {
 	res.writeHead(200, {
@@ -268,9 +274,10 @@ function initSSE(res: ServerResponse): void {
 	});
 }
 
-/** Записати SSE-подію. */
+/** Записати SSE-подію. Безпечно після відвалу клієнта (guard writableEnded/destroyed). */
 function writeSSE(res: ServerResponse, event: unknown): void {
 	try {
+		if (res.writableEnded || res.destroyed) return;
 		res.write(`data: ${JSON.stringify(event)}\n\n`);
 	} catch {
 		/* зʼєднання могло закритись */
@@ -292,6 +299,7 @@ export async function handleChat(
 	promptBindings: SessionPromptBinding,
 	pluginSessionRegistry: PluginSessionRegistryImpl,
 	pluginSessionStore: PluginSessionStore,
+	lock: ChatLock,
 ): Promise<void> {
 	initSSE(res);
 
@@ -336,16 +344,19 @@ export async function handleChat(
 				resolveTemplate(sessionId, promptTemplates, promptBindings),
 			);
 
-	// Скасування при disconnect.
-	const onClose = (): void => {
-		void harness.abort().catch(() => undefined);
-	};
-	req.on("close", onClose);
-
-	// Стрімити всі події (включно session_compact при авто-compact).
-	let unsub: (() => void) | undefined;
-	const finished = new Promise<void>((resolve) => {
-		unsub = harness.subscribe((event: AgentHarnessEvent) => {
+	// Per-session lock: заборонити дубль-старт тієї ж сесії (409 «session busy»).
+	if (!lock.tryStart(sessionId, () => void harness.abort().catch(() => undefined))) {
+		writeSSE(res, { type: "error", message: "Сесія вже виконується — дочекайтесь завершення або зупиніться" });
+		res.end();
+		return;
+	}
+	// ГАРЯЧЕ ВАЖЛИВО: disconnect клієнта НЕ вбиває run — фоновий агент доробляє сам,
+	// пише в JSONL. SSE-записи захищені (writeSSE перевіряє writableEnded/destroyed).
+	try {
+		// Стрімити всі події (включно session_compact при авто-compact).
+		let unsub: (() => void) | undefined;
+		const finished = new Promise<void>((resolve) => {
+			unsub = harness.subscribe((event: AgentHarnessEvent) => {
 			writeSSE(res, event);
 			if (event.type === "agent_end") {
 				resolve();
@@ -364,7 +375,6 @@ export async function handleChat(
 
 	await finished;
 	unsub?.();
-	req.off("close", onClose);
 
 	// Action: плагіні можуть відреагувати на завершення відповіді (payload: session/model).
 	if (promptError === null) {
@@ -390,7 +400,10 @@ export async function handleChat(
 		writeSSE(res, { type: "error", message: errMsg });
 	}
 
-	res.end();
+		res.end();
+	} finally {
+		lock.finish(sessionId);
+	}
 }
 
 /** /api/sessions/:id/compact: ручна компактація → SSE з session_compact. */
