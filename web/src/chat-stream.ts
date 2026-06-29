@@ -1,10 +1,12 @@
 import type { AgentEvent } from "@coudycode/agent-core";
+import type { ImageContent } from "@coudycode/ai";
 
 /** Параметри SSE-запиту /api/chat. */
 export interface ChatStreamOptions {
 	sessionId: string;
 	message: string;
 	signal?: AbortSignal;
+	images?: ImageContent[];
 }
 
 /** Парсити SSE-рядок «data: {json}» → обʼєкт події (або null). */
@@ -30,7 +32,11 @@ export async function streamChat(
 	const res = await fetch("/api/chat", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ sessionId: options.sessionId, message: options.message }),
+		body: JSON.stringify({
+			sessionId: options.sessionId,
+			message: options.message,
+			images: options.images,
+		}),
 		signal: options.signal,
 	});
 

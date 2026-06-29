@@ -1014,3 +1014,140 @@ body {
 	0%, 100% { opacity: 1; transform: scale(1); }
 	50% { opacity: 0.3; transform: scale(0.6); }
 }
+
+/* ===== ChatGPT-style композер ===== */
+.cc-composer {
+	background: var(--pi-page-bg, #f8f8f8);
+	padding: 0 16px 10px;
+}
+
+.cc-composer-inner {
+	max-width: 900px;
+	margin: 0 auto;
+}
+
+.cc-input-card {
+	background: var(--pi-card-bg, #fff);
+	border: 1px solid var(--pi-border-muted, #d8d8d8);
+	border-radius: 14px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+	overflow: hidden;
+}
+
+.cc-attach-preview {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	padding: 10px 12px 0;
+}
+
+.cc-attach-thumb {
+	position: relative;
+	width: 60px;
+	height: 60px;
+	border-radius: 8px;
+	overflow: hidden;
+	border: 1px solid var(--pi-border-muted, #e0e0e0);
+	flex-shrink: 0;
+}
+
+.cc-attach-thumb img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.cc-attach-remove {
+	position: absolute;
+	top: 2px;
+	right: 2px;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: rgba(0, 0, 0, 0.6);
+	color: #fff;
+	border: none;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	padding: 0;
+	line-height: 1;
+}
+
+.cc-attach-remove:hover {
+	background: rgba(0, 0, 0, 0.85);
+}
+
+.cc-input-row {
+	display: flex;
+	align-items: flex-end;
+	gap: 8px;
+	padding: 8px 12px;
+}
+
+.cc-input-textarea {
+	flex: 1;
+	border: none;
+	outline: none;
+	resize: none;
+	background: transparent;
+	color: var(--pi-text, #1f2328);
+	font-size: 15px;
+	line-height: 1.5;
+	font-family: inherit;
+	max-height: 200px;
+	overflow-y: auto;
+	padding: 6px 0;
+}
+
+.cc-input-textarea::placeholder {
+	color: var(--pi-text-muted, #999);
+}
+
+.cc-input-btn {
+	flex-shrink: 0;
+	width: 34px;
+	height: 34px;
+	border-radius: 50%;
+	border: none;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	padding: 0;
+	transition: background 0.1s, opacity 0.1s;
+}
+
+.cc-input-btn:disabled {
+	cursor: not-allowed;
+	opacity: 0.45;
+}
+
+.cc-input-attach {
+	background: transparent;
+	color: var(--pi-text-muted, #6c6c6c);
+}
+
+.cc-input-attach:not(:disabled):hover {
+	background: var(--pi-page-bg, #f0f0f0);
+	color: var(--pi-text, #1f2328);
+}
+
+.cc-input-send {
+	background: var(--pi-accent, #5a8080);
+	color: #fff;
+}
+
+.cc-input-send:not(:disabled):hover {
+	background: color-mix(in srgb, var(--pi-accent, #5a8080) 85%, #000);
+}
+
+.cc-input-stop {
+	background: #e5484d;
+	color: #fff;
+}
+
+.cc-input-stop:hover {
+	background: #d63a3f;
+}

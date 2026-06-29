@@ -4,6 +4,7 @@
  * коли користувач переключився на інший чат/розділ.
  */
 import type { AgentEvent } from "@coudycode/agent-core";
+import type { ImageContent } from "@coudycode/ai";
 import {
 	applyEvent,
 	initialConversationState,
@@ -109,8 +110,8 @@ class SessionRunner {
 	 * НЕ прибираємо з Map одразу після done — даємо підписникам зчитати фінал,
 	 * потім залишаємо з running=false до наступного start.
 	 */
-	start(sessionId: string, message: string): void {
-		if (!message.trim()) return;
+	start(sessionId: string, message: string, images?: ImageContent[]): void {
+		if (!message.trim() && !(images && images.length)) return;
 		const existing = this.streams.get(sessionId);
 		if (existing && existing.running) return; // guard дублів
 
@@ -127,7 +128,7 @@ class SessionRunner {
 		this.streams.set(sessionId, stream);
 		this.emit({ type: "start", sessionId });
 
-		streamChat({ sessionId, message, signal: controller.signal }, (event) => {
+		streamChat({ sessionId, message, signal: controller.signal, images }, (event) => {
 			this.handleEvent(sessionId, event);
 		})
 			.catch(() => {

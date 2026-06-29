@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, Square, Gauge, Layers } from "lucide-react";
+import { Paperclip, ArrowUp, Square, Gauge, Layers, X } from "lucide-react";
 import type { AgentMessage } from "@coudycode/agent-core";
-import type { ToolCall as ToolCallContent } from "@coudycode/ai";
+import type { ImageContent, ToolCall as ToolCallContent } from "@coudycode/ai";
 import {
 	ConversationView,
 	ToolCall,
@@ -64,6 +64,7 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 	// Поточний хід (стрімиться) — з SessionRunner (фоновий агент, переживає навігацію).
 	const { working: live, running, error: runError, start: runnerStart, abort: runnerAbort } = useSessionRunner(sessionId);
 	const [input, setInput] = useState("");
+	const [images, setImages] = useState<ImageContent[]>([]);
 	const [compaction, setCompaction] = useState<CompactionState | null>(null);
 	const [compacting, setCompacting] = useState(false);
 	const [panelsOpen, setPanelsOpen] = useState(true);
@@ -77,6 +78,8 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const stickRef = useRef(true);
+	const textareaRef = useRef<HTMLTextAreaElement>(null);
+	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	const messages: AgentMessage[] = [...committed, ...live.messages];
 	const toolStatus: Record<string, ToolCallStatus> = { ...committedStatus, ...live.toolStatus };
@@ -200,11 +203,12 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 	// тепер — але авто-compact вже стрімиться через той самий SSE, і SessionRunner його застосовує.
 	// Ручна компактація окремим ендпоінтом — див. handleCompact нижче.
 
-	const startStream = (message: string): void => {
-		if (!message || running) return;
+	const startStream = (message: string, imgs: ImageContent[]): void => {
+		if (running || (!message && imgs.length === 0)) return;
 		setInput("");
+		setImages([]);
 		stickRef.current = true;
-		runnerStart(message);
+		runnerStart(message, imgs.length ? imgs : undefined);
 	};
 
 	const handleStop = (): void => {
@@ -270,11 +274,52 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 			});
 	};
 
-	const handleSubmit = (e: React.FormEvent): void => {
-		e.preventDefault();
+	const handleSubmit = (e?: React.FormEvent): void => {
+		e?.preventDefault();
 		const message = input.trim();
-		if (!message) return;
-		startStream(message);
+		if (!message && images.length === 0) return;
+		startStream(message, images);
+	};
+
+	/** Enter = відправити, Shift+Enter = новий рядок. */
+	const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+		if (e.key === "Enter" && !e.shiftKey) {
+			e.preventDefault();
+		handleSubmit();
+		}
+	};
+
+	/** Авто-зростання textarea (rows=1, кроп ~200px). */
+	const handleTextareaInput = (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
+		setInput(e.target.value);
+		const el = textareaRef.current;
+		if (el) {
+			el.style.height = "auto";
+			el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+		}
+	};
+
+	/** Обрати файли → конвертувати у base64 ImageContent → додати. */
+	const handleAttach = (e: React.ChangeEvent<HTMLInputElement>): void => {
+		const files = Array.from(e.target.files ?? []);
+		for (const file of files) {
+			const reader = new FileReader();
+			reader.onload = (): void => {
+				const result = reader.result;
+				if (typeof result !== "string") return;
+				// result = "data:image/png;base64,..." → дістати base64 + mimeType.
+				const match = /^data:([^;]+);base64,(.+)$/.exec(result);
+				if (!match) return;
+				setImages((prev) => [...prev, { type: "image", data: match[2], mimeType: match[1] }]);
+			};
+			reader.readAsDataURL(file);
+		}
+		// Скинути input щоб можна було обрати той самий файл повторно.
+		if (fileInputRef.current) fileInputRef.current.value = "";
+	};
+
+	const removeImage = (index: number): void => {
+		setImages((prev) => prev.filter((_, i) => i !== index));
 	};
 
 	const handleScroll = (): void => {
@@ -395,37 +440,71 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 				</div>
 			</div>
 
-			<div className="border-top p-3 bg-white">
-				<div className="d-flex flex-column" style={{ maxWidth: 900, margin: "0 auto" }}>
+			<div className="cc-composer">
+				<div className="cc-composer-inner">
 					<ProcessBar />
-					<form
-						onSubmit={handleSubmit}
-						className="d-flex gap-2"
-						style={{ maxWidth: 900, margin: "0 auto" }}
-					>
-					<input
-						type="text"
-						className="form-control"
-						placeholder="Напишіть повідомлення…"
-						value={input}
-						onChange={(e) => setInput(e.target.value)}
-						disabled={running}
-					/>
-					{running ? (
-						<button
-							type="button"
-							className="btn btn-danger d-flex align-items-center gap-1"
-							onClick={handleStop}
-							title="Зупинити"
-						>
-							<Square size={14} /> Стоп
-						</button>
-					) : (
-						<button type="submit" className="btn btn-primary" disabled={!input.trim() || catalog.length === 0} title={catalog.length === 0 ? "Підключіть провайдера" : undefined}>
-							<Send size={16} />
-						</button>
-					)}
-				</form>
+					<div className="cc-input-card">
+						{images.length > 0 && (
+							<div className="cc-attach-preview">
+								{images.map((img, i) => (
+									<div key={i} className="cc-attach-thumb">
+										<img src={`data:${img.mimeType};base64,${img.data}`} alt="attachment" />
+										<button type="button" className="cc-attach-remove" onClick={() => removeImage(i)} title="Прибрати">
+											<X size={11} />
+										</button>
+									</div>
+								))}
+							</div>
+						)}
+						<form className="cc-input-row" onSubmit={handleSubmit}>
+							<input
+								ref={fileInputRef}
+								type="file"
+								accept="image/*"
+								multiple
+								style={{ display: "none" }}
+								onChange={handleAttach}
+							/>
+							<button
+								type="button"
+								className="cc-input-btn cc-input-attach"
+								onClick={() => fileInputRef.current?.click()}
+								disabled={running}
+								title="Прикріпити зображення"
+							>
+								<Paperclip size={17} />
+							</button>
+							<textarea
+								ref={textareaRef}
+								className="cc-input-textarea"
+								rows={1}
+								placeholder="Напишіть повідомлення…"
+								value={input}
+								onChange={handleTextareaInput}
+								onKeyDown={handleKeyDown}
+								disabled={running}
+							/>
+							{running ? (
+								<button
+									type="button"
+									className="cc-input-btn cc-input-stop"
+									onClick={handleStop}
+									title="Зупинити"
+								>
+									<Square size={15} />
+								</button>
+							) : (
+								<button
+									type="submit"
+									className="cc-input-btn cc-input-send"
+									disabled={(!input.trim() && images.length === 0) || catalog.length === 0}
+									title={catalog.length === 0 ? "Підключіть провайдера" : "Надіслати"}
+								>
+									<ArrowUp size={17} />
+								</button>
+							)}
+						</form>
+					</div>
 				</div>
 			</div>
 		</div>

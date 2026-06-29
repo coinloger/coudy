@@ -13,7 +13,7 @@ import {
 import type { AgentEvent, AgentHarnessEvent, AgentTool } from "@coudycode/agent-core";
 import { NodeExecutionEnv } from "@coudycode/agent-core/node";
 import { getModel } from "@coudycode/ai";
-import type { Model, Api } from "@coudycode/ai";
+import type { Model, Api, ImageContent } from "@coudycode/ai";
 import { createAllTools, wrapToolDefinition } from "@coudycode/tools";
 import type { ToolDefinition } from "@coudycode/tools";
 import { Type, type Static } from "typebox";
@@ -288,7 +288,7 @@ function writeSSE(res: ServerResponse, event: unknown): void {
 export async function handleChat(
 	req: IncomingMessage,
 	res: ServerResponse,
-	body: { sessionId?: unknown; message?: unknown },
+	body: { sessionId?: unknown; message?: unknown; images?: unknown[] },
 	sessions: SessionManager,
 	auth: AuthStorage,
 	defs: ProviderDefinitions,
@@ -305,6 +305,16 @@ export async function handleChat(
 
 	const sessionId = typeof body.sessionId === "string" ? body.sessionId : null;
 	const message = typeof body.message === "string" ? body.message.trim() : null;
+	// Зображення (base64 ImageContent[]) — опціонально; валідуємо лише масив обʼєктів {type:"image"}.
+	const rawImages = Array.isArray(body.images) ? body.images : [];
+	const images = rawImages.filter(
+		(i: unknown): i is ImageContent =>
+			typeof i === "object" &&
+			i !== null &&
+			(i as { type?: unknown }).type === "image" &&
+			typeof (i as { data?: unknown }).data === "string" &&
+			typeof (i as { mimeType?: unknown }).mimeType === "string",
+	);
 
 	if (!sessionId || !message) {
 		writeSSE(res, { type: "error", message: "Потрібні поля sessionId та message" });
@@ -368,7 +378,7 @@ export async function handleChat(
 	try {
 		// Action: плагіни можуть підготуватись ДО виклику LLM (payload: session/message/model).
 		await hooks.doAction("agent:before-prompt", opened.session, message, resolved.model);
-		await harness.prompt(message);
+		await harness.prompt(message, images.length ? { images } : undefined);
 	} catch (err) {
 		promptError = err;
 	}

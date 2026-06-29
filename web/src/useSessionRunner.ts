@@ -13,7 +13,7 @@ export function useSessionRunner(sessionId: string): {
 	working: SessionStreamState["working"];
 	running: boolean;
 	error: string | null;
-	start: (message: string) => void;
+	start: (message: string, images?: import("@coudycode/ai").ImageContent[]) => void;
 	abort: () => void;
 } {
 	const subscribe = (cb: () => void): (() => void) => sessionRunner.subscribe(sessionId, cb);
@@ -34,7 +34,8 @@ export function useSessionRunner(sessionId: string): {
 		working: snap.working,
 		running: snap.running,
 		error: snap.error,
-		start: (message: string): void => sessionRunner.start(sessionId, message),
+		start: (message: string, images?: import("@coudycode/ai").ImageContent[]): void =>
+			sessionRunner.start(sessionId, message, images),
 		abort: (): void => {
 			void sessionRunner.abort(sessionId);
 		},
