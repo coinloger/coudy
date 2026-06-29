@@ -102,13 +102,17 @@ function ItemButton(props: {
       className={`d-flex align-items-center gap-2 rounded px-2 py-1 ${
         collapsed ? "justify-content-center" : ""
       } ${active ? "bg-primary text-white" : "text-light"}`}
-      style={{ cursor: "pointer" }}
+      style={{ cursor: "pointer", minWidth: 0 }}
       role="button"
       title={title}
       onClick={onClick}
     >
       <span className="flex-shrink-0 d-flex align-items-center">{icon}</span>
-      {!collapsed && label && <span className="small text-truncate flex-grow-1">{label}</span>}
+      {!collapsed && label && (
+        <span className="small text-truncate flex-grow-1" style={{ minWidth: 0 }}>
+          {label}
+        </span>
+      )}
       {!collapsed && trailing}
     </div>
   );
