@@ -70,6 +70,21 @@ export async function resolveModelForChat(
 	return { model: catalogModel, apiKey };
 }
 
+/** Доступний тулз для UI (GET /api/tools). */
+export interface ToolInfo {
+	name: string;
+	description?: string;
+}
+
+/**
+ * Поточний глобальний набір тулзів: базові + активні плагін-тулзи
+ * (hooks.applyFilters("tools:register", base)). Для UI-селектора тулзів шаблону.
+ */
+export async function getGlobalTools(cwd: string, hooks: HookEngine): Promise<ToolInfo[]> {
+	const tools = await hooks.applyFilters<AgentTool[]>("tools:register", createAllTools(cwd));
+	return tools.map((t) => ({ name: t.name, description: t.description }));
+}
+
 /** Створити AgentHarness для сесії з резолвленою моделлю + auth + tools + промпт. */
 async function createHarness(
 	resolved: ResolvedModel,
@@ -79,14 +94,14 @@ async function createHarness(
 	template: { content: string; tools: string[] | null } | null,
 ): Promise<AgentHarness> {
 	const env = new NodeExecutionEnv({ cwd });
-	// Базові інструменти; фільтруємо за toolset-ом шаблону (null=усі, []=без, [...]=ці).
-	let baseTools = createAllTools(cwd);
+	// Базові інструменти + плагін-тулзи (через filter «tools:register»).
+	let tools = await hooks.applyFilters<AgentTool[]>("tools:register", createAllTools(cwd));
+	// Фільтр за toolset-ом шаблону ПІСЛЯ applyFilters → контролює всі тулзи (вкл. плагін):
+	// null = усі; [] = без; [...] = лише ці (базові + плагін з цього списку).
 	if (template && template.tools !== null) {
 		const want = new Set(template.tools);
-		baseTools = baseTools.filter((t) => want.has(t.name));
+		tools = tools.filter((t) => want.has(t.name));
 	}
-	// Плагіни можуть додати свої через filter «tools:register» (поверх відфільтрованих).
-	const tools = await hooks.applyFilters<AgentTool[]>("tools:register", baseTools);
 	// Системний промпт: content шаблону ?? built-in (з поточним набором тулзів).
 	const basePrompt = template
 		? template.content

@@ -36,9 +36,16 @@ function toolsBadge(tools: string[] | null | undefined): string {
 	return tools.map((t) => TOOL_LABELS[t] ?? t).join(", ");
 }
 
+/** Доступний тулз з GET /api/tools (для селектора тулзів шаблону). */
+interface ToolInfo {
+	name: string;
+	description?: string;
+}
+
 /** Таба налаштувань «Шаблони системних промптів» — CRUD через /api/prompts. */
 export default function PromptTemplates(_props: PromptTemplatesProps): React.ReactNode {
 	const [templates, setTemplates] = useState<PromptTemplateEntry[]>([]);
+	const [availableTools, setAvailableTools] = useState<ToolInfo[]>([]);
 	const [form, setForm] = useState<FormState | null>(null);
 	const [saving, setSaving] = useState(false);
 	const [seeding, setSeeding] = useState(false);
@@ -58,6 +65,11 @@ export default function PromptTemplates(_props: PromptTemplatesProps): React.Rea
 
 	useEffect(() => {
 		void refresh();
+		// Доступні тулзи (базові + плагін) для селектора шаблону.
+		void fetch("/api/tools")
+			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+			.then((data: { tools: ToolInfo[] }) => setAvailableTools(data.tools ?? []))
+			.catch(() => setAvailableTools([]));
 	}, [refresh]);
 
 	const handleSave = async (): Promise<void> => {
@@ -237,129 +249,36 @@ export default function PromptTemplates(_props: PromptTemplatesProps): React.Rea
 						</div>
 						<div className="mb-3">
 							<label className="form-label small fw-semibold">Інструменти</label>
-							<div className="d-flex align-items-center gap-2 mb-2">
-								<div className="form-check form-switch m-0">
-									<input
-										className="form-check-input"
-										type="checkbox"
-										role="switch"
-										id="tools-all"
-										checked={form.tools === null}
-										onChange={(e) => setForm({ ...form, tools: e.target.checked ? null : [] })}
-									/>
-									<label className="form-check-label small" htmlFor="tools-all">Усі</label>
-								</div>
-								{form.tools !== null && (
-									<button type="button" className="btn btn-sm btn-link p-0" onClick={() => setForm({ ...form, tools: [] })}>Очистити</button>
-								)}
+							<div className="mb-2 d-flex gap-2">
+								<button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setForm({ ...form, tools: null })}>Обрати всі</button>
+								<button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setForm({ ...form, tools: [] })}>Очистити</button>
+								<span className="text-muted small align-self-center">{form.tools === null ? "обрано всі" : `обрано ${(form.tools ?? []).length} з ${availableTools.length}`}</span>
 							</div>
-							{form.tools !== null && (
+							{availableTools.length === 0 ? (
+								<div className="text-muted small">Завантаження тулзів…</div>
+							) : (
 								<div className="d-flex flex-wrap gap-2">
-								<label key={"read"} className="cc-tool-chip">
-									<input
-										type="checkbox"
-										className="form-check-input"
-										checked={form.tools?.includes("read") ?? false}
-										onChange={(e) => {
-											const set = new Set(form.tools ?? []);
-											if (e.target.checked) set.add("read"); else set.delete("read");
-											setForm({ ...form, tools: Array.from(set) });
-										}}
-									/>
-									<span className="small">read</span>
-								</label>
-								<label key={"bash"} className="cc-tool-chip">
-									<input
-										type="checkbox"
-										className="form-check-input"
-										checked={form.tools?.includes("bash") ?? false}
-										onChange={(e) => {
-											const set = new Set(form.tools ?? []);
-											if (e.target.checked) set.add("bash"); else set.delete("bash");
-											setForm({ ...form, tools: Array.from(set) });
-										}}
-									/>
-									<span className="small">bash</span>
-								</label>
-								<label key={"edit"} className="cc-tool-chip">
-									<input
-										type="checkbox"
-										className="form-check-input"
-										checked={form.tools?.includes("edit") ?? false}
-										onChange={(e) => {
-											const set = new Set(form.tools ?? []);
-											if (e.target.checked) set.add("edit"); else set.delete("edit");
-											setForm({ ...form, tools: Array.from(set) });
-										}}
-									/>
-									<span className="small">edit</span>
-								</label>
-								<label key={"write"} className="cc-tool-chip">
-									<input
-										type="checkbox"
-										className="form-check-input"
-										checked={form.tools?.includes("write") ?? false}
-										onChange={(e) => {
-											const set = new Set(form.tools ?? []);
-											if (e.target.checked) set.add("write"); else set.delete("write");
-											setForm({ ...form, tools: Array.from(set) });
-										}}
-									/>
-									<span className="small">write</span>
-								</label>
-								<label key={"grep"} className="cc-tool-chip">
-									<input
-										type="checkbox"
-										className="form-check-input"
-										checked={form.tools?.includes("grep") ?? false}
-										onChange={(e) => {
-											const set = new Set(form.tools ?? []);
-											if (e.target.checked) set.add("grep"); else set.delete("grep");
-											setForm({ ...form, tools: Array.from(set) });
-										}}
-									/>
-									<span className="small">grep</span>
-								</label>
-								<label key={"find"} className="cc-tool-chip">
-									<input
-										type="checkbox"
-										className="form-check-input"
-										checked={form.tools?.includes("find") ?? false}
-										onChange={(e) => {
-											const set = new Set(form.tools ?? []);
-											if (e.target.checked) set.add("find"); else set.delete("find");
-											setForm({ ...form, tools: Array.from(set) });
-										}}
-									/>
-									<span className="small">find</span>
-								</label>
-								<label key={"ls"} className="cc-tool-chip">
-									<input
-										type="checkbox"
-										className="form-check-input"
-										checked={form.tools?.includes("ls") ?? false}
-										onChange={(e) => {
-											const set = new Set(form.tools ?? []);
-											if (e.target.checked) set.add("ls"); else set.delete("ls");
-											setForm({ ...form, tools: Array.from(set) });
-										}}
-									/>
-									<span className="small">ls</span>
-								</label>
-								<label key={"fetch"} className="cc-tool-chip">
-									<input
-										type="checkbox"
-										className="form-check-input"
-										checked={form.tools?.includes("fetch") ?? false}
-										onChange={(e) => {
-											const set = new Set(form.tools ?? []);
-											if (e.target.checked) set.add("fetch"); else set.delete("fetch");
-											setForm({ ...form, tools: Array.from(set) });
-										}}
-									/>
-									<span className="small">fetch</span>
-								</label>
-							</div>
+									{availableTools.map((tool) => {
+										const checked = form.tools === null || (form.tools ?? []).includes(tool.name);
+										return (
+											<label key={tool.name} className="cc-tool-chip" title={tool.description ?? tool.name}>
+												<input
+													type="checkbox"
+													className="form-check-input"
+													checked={checked}
+													onChange={(e) => {
+														// null = усі → при зміні переходимо до явного набору; інакше toggle окремого тулза.
+														const base = form.tools === null ? availableTools.map((t) => t.name) : [...(form.tools ?? [])];
+														const set = new Set(base);
+														if (e.target.checked) set.add(tool.name); else set.delete(tool.name);
+														setForm({ ...form, tools: Array.from(set) });
+													}}
+												/>
+												<span className="small">{tool.name}</span>
+											</label>
+										);
+									})}
+								</div>
 							)}
 						</div>
 						<div className="d-flex gap-2">

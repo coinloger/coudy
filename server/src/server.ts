@@ -33,7 +33,7 @@ import {
 import { SessionManager } from "./sessions.js";
 import { PromptTemplateStore, SessionPromptBinding } from "./prompts.js";
 import { PluginSessionRegistryImpl, PluginSessionStore } from "./plugin-sessions.js";
-import { handleChat, handleCompact } from "./chat.js";
+import { handleChat, handleCompact, getGlobalTools } from "./chat.js";
 
 export interface CoudyServerOptions {
   port?: number;
@@ -504,6 +504,13 @@ export class CoudyServer {
     }
 
     // === Сесії (agent-core JSONL) ===
+
+    // GET /api/tools — поточний глобальний набір тулзів (базові + активні плагін-тулзи).
+    if (method === "GET" && pathname === "/api/tools") {
+      const tools = await getGlobalTools(process.cwd(), this.hooks);
+      this.sendJson(res, 200, { tools });
+      return;
+    }
 
     // GET /api/prompts — список шаблонів системних промптів.
     if (method === "GET" && pathname === "/api/prompts") {
