@@ -125,12 +125,6 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 				},
 			},
 			{
-				id: "time",
-				label: (m: AgentMessage) =>
-					new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-				display: true,
-			},
-			{
 				id: "retry",
 				label: "Повторити",
 				icon: "RotateCcw",
@@ -142,6 +136,13 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 					if (!text && imgs.length === 0) return;
 					runnerStart(text, imgs.length ? imgs : undefined);
 				},
+			},
+			{
+				id: "time",
+				label: (m: AgentMessage) =>
+					new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+				icon: "Clock",
+				display: true,
 			},
 		];
 	}, [copiedKey, running, runnerStart]);

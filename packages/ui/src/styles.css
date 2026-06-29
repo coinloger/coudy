@@ -76,6 +76,17 @@
 .cc-ui-msg-action-icon {
 	flex-shrink: 0;
 }
+/* Кнопка лише з іконкою — компактна, без зайвого padding. */
+.cc-ui-msg-action-icon-btn {
+	padding: 0.2rem;
+	border: none;
+	background: transparent;
+	line-height: 0;
+}
+.cc-ui-msg-action-icon-btn:hover {
+	background: var(--pi-accent-muted, rgba(90, 128, 128, 0.12));
+	color: var(--pi-accent, #5a8080);
+}
 /* readonly-текст (час) — без бордеру/фону, без hover-ефекту. */
 .cc-ui-msg-action-readonly {
 	border: none;
@@ -89,10 +100,18 @@
 	color: var(--pi-text-muted, #9a9a9a);
 }
 .cc-ui-msg-user {
-	background: var(--pi-user-msg-bg);
 	align-self: flex-end;
 	max-width: 80%;
+}
+/* Кольоровий бокс — лише навколо тексту (body), панель дій візуально під ним на нейтральному фоні. */
+.cc-ui-msg-user > .cc-ui-msg-body {
+	background: var(--pi-user-msg-bg);
 	padding: 0.75rem 1rem;
+	border-radius: 0.5rem;
+}
+/* User-дії — по правому краю (під повідомленням, час крайній). */
+.cc-ui-msg-user > .cc-ui-msg-actions {
+	justify-content: flex-end;
 }
 .cc-ui-msg-assistant {
 	align-self: stretch;

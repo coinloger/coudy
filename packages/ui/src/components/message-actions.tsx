@@ -1,5 +1,5 @@
 import type { AgentMessage } from "@coudycode/agent-core";
-import { Copy, RotateCcw, RefreshCw, Clipboard, Trash2, Pencil, type LucideIcon } from "lucide-react";
+import { Copy, RotateCcw, RefreshCw, Clipboard, Trash2, Pencil, Clock, type LucideIcon } from "lucide-react";
 
 /** Мапа назв-іконок (з MessageAction.icon) → компонент Lucide. */
 const ICONS: Record<string, LucideIcon> = {
@@ -11,6 +11,8 @@ const ICONS: Record<string, LucideIcon> = {
 	edit: Pencil,
 	trash: Trash2,
 	delete: Trash2,
+	time: Clock,
+	clock: Clock,
 };
 
 /** Лейбл дії: сталий рядок або функція від повідомлення (напр. час). */
@@ -74,27 +76,34 @@ export function MessageActionsBar({ message, actions }: MessageActionsBarProps):
 			{visible.map((action) => {
 				const label = resolveLabel(action.label, message);
 				const Icon = resolveIcon(action.icon);
-				// readonly-текст (напр. час) — без кліку, без hover-ефекту.
+				// readonly-текст (напр. час) — текст + опц. іконка годинника, без кліку.
 				if (action.display && !action.onClick) {
 					return (
-						<span key={action.id} className="cc-ui-msg-action cc-ui-msg-action-readonly" title={label}>
+						<span
+							key={action.id}
+							className="cc-ui-msg-action cc-ui-msg-action-readonly"
+							title={label}
+						>
+							{Icon ? <Icon size={12} className="cc-ui-msg-action-icon" /> : null}
 							{label}
 						</span>
 					);
 				}
+				// Клікабельна дія — лише іконка з тултіпом (label у title + aria-label);
+				// якщо іконки нема (напр. плагін без icon) — рендерити текст label.
 				return (
 					<button
 						key={action.id}
 						type="button"
-						className="cc-ui-msg-action"
+						className={`cc-ui-msg-action${Icon ? " cc-ui-msg-action-icon-btn" : ""}`}
 						title={label}
+						aria-label={label}
 						onClick={(e) => {
 							e.stopPropagation();
 							action.onClick?.(message);
 						}}
 					>
-						{Icon && <Icon size={12} className="cc-ui-msg-action-icon" />}
-						{label}
+						{Icon ? <Icon size={13} className="cc-ui-msg-action-icon" /> : label}
 					</button>
 				);
 			})}
