@@ -724,3 +724,88 @@
 	text-decoration: underline;
 	background: color-mix(in srgb, var(--pi-accent) 12%, transparent);
 }
+
+/* ===== Блок помилки моделі/провайдера (assistant) ===== */
+.cc-ui-msg-error {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	padding: 12px 14px;
+	background: color-mix(in srgb, #e5484d 8%, transparent);
+	border: 1px solid color-mix(in srgb, #e5484d 30%, transparent);
+	border-radius: 10px;
+	color: var(--pi-text);
+}
+
+.cc-ui-msg-error-icon {
+	color: #e5484d;
+	flex-shrink: 0;
+	margin-top: 1px;
+}
+
+.cc-ui-msg-error-text {
+	min-width: 0;
+	flex: 1;
+	word-break: break-word;
+}
+
+.cc-ui-msg-error-title {
+	font-weight: 600;
+	font-size: 13px;
+	color: #c93a3f;
+	margin-bottom: 3px;
+}
+
+.cc-ui-msg-error-body {
+	font-size: 14px;
+	line-height: 1.45;
+	white-space: pre-wrap;
+}
+
+/* ===== Image lightbox ===== */
+.cc-ui-lightbox-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 3000;
+	background: rgba(0, 0, 0, 0.85);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 32px;
+	animation: cc-ui-lightbox-fade 0.15s ease-out;
+}
+
+@keyframes cc-ui-lightbox-fade {
+	from { opacity: 0; }
+	to { opacity: 1; }
+}
+
+.cc-ui-lightbox-img {
+	max-width: 100%;
+	max-height: 100%;
+	object-fit: contain;
+	border-radius: 6px;
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.cc-ui-lightbox-close {
+	position: fixed;
+	top: 18px;
+	right: 18px;
+	width: 38px;
+	height: 38px;
+	border-radius: 50%;
+	background: rgba(255, 255, 255, 0.15);
+	border: none;
+	color: #fff;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	padding: 0;
+	transition: background 0.1s;
+}
+
+.cc-ui-lightbox-close:hover {
+	background: rgba(255, 255, 255, 0.3);
+}

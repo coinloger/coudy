@@ -369,6 +369,13 @@ export async function handleChat(
 			unsub = harness.subscribe((event: AgentHarnessEvent) => {
 			writeSSE(res, event);
 			if (event.type === "agent_end") {
+				// Логувати помилки моделі/провайдера в dev.log (діагностика замість «мовчання»).
+				const last = event.messages[event.messages.length - 1];
+				if (last && last.role === "assistant" && last.stopReason === "error" && last.errorMessage) {
+					console.error(
+						`[chat] Помилка відповіді (${last.provider}/${last.model}): ${last.errorMessage}`,
+					);
+				}
 				resolve();
 			}
 		});

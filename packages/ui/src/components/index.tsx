@@ -2,6 +2,7 @@ export { ConversationView, type ConversationViewProps } from "./ConversationView
 export type { MessageAction } from "./message-actions.tsx";
 export { AssistantMessage, type AssistantMessageProps, type ToolResultIndex } from "./AssistantMessage.tsx";
 export { UserMessage, type UserMessageProps } from "./UserMessage.tsx";
+export { ImageLightbox, type ImageLightboxProps } from "./ImageLightbox.tsx";
 export { SystemMessage, type SystemMessageProps } from "./SystemMessage.tsx";
 export { MarkdownRenderer, type MarkdownRendererProps } from "./MarkdownRenderer.tsx";
 export { describeToolCall, describeToolGroup, toolCallPreview, basename, TOOL_VERB, type ToolActionVerb } from "./tool-summary.ts";

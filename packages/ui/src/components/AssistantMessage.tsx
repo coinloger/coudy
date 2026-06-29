@@ -1,4 +1,5 @@
 import type { AssistantMessage as AssistantMessageType } from "@coudycode/ai";
+import { AlertTriangle } from "lucide-react";
 import { MarkdownRenderer } from "./MarkdownRenderer.tsx";
 import { ThinkingBlock } from "./ThinkingBlock.tsx";
 import { ToolCall } from "./ToolCall.tsx";
@@ -72,7 +73,24 @@ export function AssistantMessage({
 	streamingThinkingIndex,
 	actions,
 }: AssistantMessageProps): React.ReactNode {
+	const isError = message.stopReason === "error" && !!message.errorMessage;
 	const segments = segmentContent(message.content);
+
+	/** Блок помилки моделі/провайдера (видимий, замість порожньої бульки). */
+	if (isError) {
+		return (
+			<div className="cc-ui-msg cc-ui-msg-assistant">
+				<div className="cc-ui-msg-error">
+					<AlertTriangle size={16} className="cc-ui-msg-error-icon" />
+					<div className="cc-ui-msg-error-text">
+						<div className="cc-ui-msg-error-title">Помилка відповіді</div>
+						<div className="cc-ui-msg-error-body">{message.errorMessage}</div>
+					</div>
+				</div>
+				{actions && actions.length > 0 && <MessageActionsBar message={message as never} actions={actions} />}
+			</div>
+		);
+	}
 
 	/** Побудувати результат для tool-call за його id. */
 	const renderResult = (callId: string, toolName: string): React.ReactNode => {
