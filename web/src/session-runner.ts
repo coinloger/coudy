@@ -18,6 +18,13 @@ export interface SessionStreamState {
 	error: string | null;
 }
 
+/** Стабільний idle-snapshot (те саме посилання, коли сесія не стрімиться). */
+const IDLE_SNAPSHOT: SessionStreamState = {
+	working: initialConversationState,
+	running: false,
+	error: null,
+};
+
 /** Подія subscribeAll (для toast-ів + sidebar-індикаторів). */
 export type SessionRunnerEvent =
 	| { type: "start"; sessionId: string }
@@ -30,6 +37,8 @@ interface ActiveStream {
 	working: ConversationState;
 	running: boolean;
 	error: string | null;
+	/** Кешований snapshot (стабільне посилання між змінами → useSyncExternalStore без циклу). */
+	snapshot: SessionStreamState;
 }
 
 interface Listener {
@@ -40,23 +49,33 @@ interface Listener {
 class SessionRunner {
 	private readonly streams = new Map<string, ActiveStream>();
 	private readonly listeners = new Set<Listener>();
+	// Стабільний кеш running-сесій (те саме посилання між змінами).
+	private cachedRunningIds: string[] = [];
 
-	/** Snapshot стану сесії (або idle-дефолт). */
+	/** Snapshot стану сесії (або стабільний idle-дефолт). */
 	getSnapshot(sessionId: string): SessionStreamState {
-		const s = this.streams.get(sessionId);
-		if (!s) return { working: initialConversationState, running: false, error: null };
-		return { working: s.working, running: s.running, error: s.error };
+		return this.streams.get(sessionId)?.snapshot ?? IDLE_SNAPSHOT;
 	}
 
 	isRunning(sessionId: string): boolean {
 		return this.streams.get(sessionId)?.running ?? false;
 	}
 
-	/** Список сесій, що зараз стрімляться (для sidebar). */
+	/** Список сесій, що зараз стрімляться (для sidebar) — стабільна посилання. */
 	runningIds(): string[] {
+		return this.cachedRunningIds;
+	}
+
+	/** Перебудувати кеш running-сесій (лише при зміні множини running). */
+	private rebuildRunning(): void {
 		const ids: string[] = [];
 		for (const [id, s] of this.streams) if (s.running) ids.push(id);
-		return ids;
+		this.cachedRunningIds = ids;
+	}
+
+	/** Перебудувати snapshot стріму (стабільне посилання між змінами). */
+	private rebuildSnapshot(s: ActiveStream): void {
+		s.snapshot = { working: s.working, running: s.running, error: s.error };
 	}
 
 	/** Підписатись на події однієї сесії. */
@@ -101,7 +120,10 @@ class SessionRunner {
 			working: { ...initialConversationState, working: true },
 			running: true,
 			error: null,
+			snapshot: { working: initialConversationState, running: false, error: null },
 		};
+		this.rebuildSnapshot(stream);
+		this.rebuildRunning();
 		this.streams.set(sessionId, stream);
 		this.emit({ type: "start", sessionId });
 
@@ -113,6 +135,8 @@ class SessionRunner {
 				if (s && s.running) {
 					s.running = false;
 					s.working = { ...s.working, working: false };
+					this.rebuildSnapshot(s);
+					this.rebuildRunning();
 					this.emit({ type: "done", sessionId });
 				}
 			})
@@ -122,6 +146,8 @@ class SessionRunner {
 					// Стрім завершився без явного agent_end (обрив) — фіналізуємо.
 					s.running = false;
 					s.working = { ...s.working, working: false };
+					this.rebuildSnapshot(s);
+					this.rebuildRunning();
 					this.emit({ type: "done", sessionId });
 				}
 			});
@@ -139,6 +165,8 @@ class SessionRunner {
 		s.controller.abort();
 		s.running = false;
 		s.working = { ...s.working, working: false };
+		this.rebuildSnapshot(s);
+		this.rebuildRunning();
 		this.emit({ type: "done", sessionId });
 	}
 
@@ -152,6 +180,8 @@ class SessionRunner {
 				s.error = msg;
 				s.running = false;
 				s.working = { ...s.working, working: false };
+				this.rebuildSnapshot(s);
+				this.rebuildRunning();
 				this.emit({ type: "error", sessionId, message: msg });
 			}
 			return;
@@ -159,17 +189,21 @@ class SessionRunner {
 		if (event.type === "agent_end") {
 			s.working = applyEvent(s.working, event);
 			s.running = false;
+			this.rebuildSnapshot(s);
+			this.rebuildRunning();
 			this.emit({ type: "update", sessionId });
 			this.emit({ type: "done", sessionId });
 			return;
 		}
 		s.working = applyEvent(s.working, event);
+		this.rebuildSnapshot(s);
 		this.emit({ type: "update", sessionId });
 	}
 
 	/** Скинути локальний стан сесії (після рефрешу committed у ChatView). */
 	clear(sessionId: string): void {
 		this.streams.delete(sessionId);
+		this.rebuildRunning();
 	}
 }
 

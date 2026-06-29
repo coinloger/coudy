@@ -14,10 +14,13 @@ const AUTO_DISMISS_MS = 6000;
 class ToastStore {
 	private readonly toasts = new Map<string, ToastEntry>();
 	private readonly listeners = new Set<() => void>();
+	// Стабільний кешований список (те саме посилання між змінами → useSyncExternalStore без циклу).
+	private cachedList: ToastEntry[] = [];
 
 	push(toast: Omit<ToastEntry, "id">): string {
 		const id = `t-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 		this.toasts.set(id, { id, ...toast });
+		this.rebuild();
 		this.emit();
 		// Авто-зникнення.
 		setTimeout(() => this.dismiss(id), AUTO_DISMISS_MS);
@@ -25,11 +28,19 @@ class ToastStore {
 	}
 
 	dismiss(id: string): void {
-		if (this.toasts.delete(id)) this.emit();
+		if (this.toasts.delete(id)) {
+			this.rebuild();
+			this.emit();
+		}
+	}
+
+	/** Перебудувати кешований список (тільки при реальній зміні toasts). */
+	private rebuild(): void {
+		this.cachedList = Array.from(this.toasts.values());
 	}
 
 	list(): ToastEntry[] {
-		return Array.from(this.toasts.values());
+		return this.cachedList;
 	}
 
 	subscribe(cb: () => void): () => void {

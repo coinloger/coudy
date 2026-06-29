@@ -56,16 +56,14 @@ function resolveIcon(name?: string): LucideIcon {
 const EMPTY: string[] = [];
 
 /** Сесії, що зараз стрімляться (для пульсуючого індикатора в Sidebar). */
-function useRunningSessions(): Set<string> {
-  const ids = useSyncExternalStore(
+function useRunningSessions(): string[] {
+  // runningIds() повертає стабільний кешований масив (те саме посилання між змінами),
+  // тож useSyncExternalStore не циклиться.
+  return useSyncExternalStore(
     (cb) => sessionRunner.subscribeAll(cb),
-    () => {
-      const r = sessionRunner.runningIds();
-      return r.length ? r.join("\u0000") : "";
-    },
-    () => "",
+    () => sessionRunner.runningIds(),
+    () => EMPTY,
   );
-  return new Set(ids ? ids.split("\u0000") : EMPTY);
 }
 
 /** Вбудовані пункти футера (Дашборд/Плагіни/Налаштування) — шляхи маршрутизації. */
@@ -228,7 +226,7 @@ export default function Sidebar(props: SidebarProps): React.ReactNode {
                 onClick={() => onSelectSession(s.id)}
                 trailing={
                   <>
-                    {running.has(s.id) && (
+                    {running.includes(s.id) && (
                       <span className="cc-sidebar-running-dot" title="Працює у фоні" />
                     )}
                     <button
