@@ -13,6 +13,7 @@ import "@coudycode/ui/styles.css";
 import { streamChat } from "./chat-stream";
 import { ModelSelector, type CurrentModel, type ProviderGroup } from "./ModelSelector";
 import { ProcessBar } from "./ProcessBar";
+import { filesToImages, imagesFromPaste, isBlockingOverlayOpen, isFocusInEditable } from "./composer-utils";
 
 export interface PluginChatCanvasProps {
 	/** Імʼя плагіна-власника сесії. */
@@ -129,6 +130,28 @@ export default function PluginChatCanvas({
 		setLoading(true);
 		void loadSession();
 	}, [loadSession]);
+
+	// Автофокус поля вводу при маунті / зміні pluginSessionId.
+	useEffect(() => {
+		textareaRef.current?.focus();
+	}, [pluginSessionId]);
+
+	// Глобальний перехоплювач клавіш: друкований символ поза полем вводу →
+	// фокус textarea + вставити символ. НЕ ламає ⌘K/модалки/шорткати.
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent): void => {
+			if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return;
+			if (isBlockingOverlayOpen()) return;
+			if (isFocusInEditable(document.activeElement)) return;
+			const ta = textareaRef.current;
+			if (!ta || ta.disabled) return;
+			e.preventDefault();
+			ta.focus();
+			ta.setRangeText(e.key, ta.selectionStart, ta.selectionEnd, "end");
+		};
+		document.addEventListener("keydown", onKey);
+		return () => document.removeEventListener("keydown", onKey);
+	}, []);
 
 	// Завантажити каталог підключених провайдерів + автообрати першу модель якщо в сесії нема.
 	useEffect(() => {
@@ -288,18 +311,16 @@ export default function PluginChatCanvas({
 	/** Обрати файли → base64 ImageContent → додати. */
 	const handleAttach = (e: React.ChangeEvent<HTMLInputElement>): void => {
 		const files = Array.from(e.target.files ?? []);
-		for (const file of files) {
-			const reader = new FileReader();
-			reader.onload = (): void => {
-				const result = reader.result;
-				if (typeof result !== "string") return;
-				const match = /^data:([^;]+);base64,(.+)$/.exec(result);
-				if (!match) return;
-				setImages((prev) => [...prev, { type: "image", data: match[2], mimeType: match[1] }]);
-			};
-			reader.readAsDataURL(file);
-		}
+		filesToImages(files, (imgs) => setImages((prev) => [...prev, ...imgs]));
 		if (fileInputRef.current) fileInputRef.current.value = "";
+	};
+
+	/** Ctrl+V зображень з буфера → прикріпити (заборонити paste-текст для файлів). */
+	const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>): void => {
+		const files = imagesFromPaste(e);
+		if (files.length === 0) return;
+		e.preventDefault();
+		filesToImages(files, (imgs) => setImages((prev) => [...prev, ...imgs]));
 	};
 
 	const removeImage = (index: number): void => {
@@ -427,6 +448,7 @@ export default function PluginChatCanvas({
 								value={input}
 								onChange={handleTextareaInput}
 								onKeyDown={handleKeyDown}
+								onPaste={handlePaste}
 								disabled={running}
 							/>
 							{running ? (

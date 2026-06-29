@@ -31,7 +31,8 @@ export type SessionRunnerEvent =
 	| { type: "start"; sessionId: string }
 	| { type: "update"; sessionId: string }
 	| { type: "done"; sessionId: string }
-	| { type: "error"; sessionId: string; message: string };
+	| { type: "error"; sessionId: string; message: string }
+	| { type: "title"; sessionId: string; title: string };
 
 interface ActiveStream {
 	controller: AbortController;
@@ -174,6 +175,14 @@ class SessionRunner {
 	private handleEvent(sessionId: string, event: AgentEvent): void {
 		const s = this.streams.get(sessionId);
 		if (!s) return;
+		// session:title — авто-назва чату від бекенду (не частина AgentEvent-юніону).
+		if ((event as { type?: string }).type === "session:title") {
+			const title = (event as { title?: string }).title;
+			if (typeof title === "string") {
+				this.emit({ type: "title", sessionId, title });
+			}
+			return;
+		}
 		// error-подія від бекенду не частина AgentEvent-юніону — перевірити через окремий тип.
 		if ((event as { type?: string }).type === "error") {
 			const msg = (event as { message?: string }).message;

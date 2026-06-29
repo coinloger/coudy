@@ -76,6 +76,13 @@ export default function App(): React.ReactNode {
     }
   }, [collapsed]);
 
+  // Авто-назва чату: оновити сайдбар (список сесій) коли прийде session:title.
+  useEffect(() => {
+    return sessionRunner.subscribeAll((ev) => {
+      if (ev.type === "title") void sessions.refresh();
+    });
+  }, [sessions]);
+
   const handleSelectSession = (id: string): void => {
     sessions.selectSession(id);
     navigate(`/chat/${id}`);

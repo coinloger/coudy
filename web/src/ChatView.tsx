@@ -13,6 +13,7 @@ import { ProcessBar } from "./ProcessBar";
 import { PromptSelector, type PromptTemplateEntry } from "./PromptSelector";
 import { useSessionRunner } from "./useSessionRunner";
 import { sessionRunner } from "./session-runner";
+import { filesToImages, imagesFromPaste, isBlockingOverlayOpen, isFocusInEditable } from "./composer-utils";
 import type { ChatPanel, MessageAction } from "./types";
 
 interface ChatViewProps {
@@ -124,6 +125,36 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 	useEffect(() => {
 		void loadSession();
 	}, [loadSession]);
+
+	// Автофокус поля вводу при маунті та зміні sessionId.
+	useEffect(() => {
+		textareaRef.current?.focus();
+	}, [sessionId]);
+
+	// Глобальний перехоплювач клавіш: друкований символ поза полем вводу →
+	// фокус textarea + вставити символ. НЕ ламає ⌘K/модалки/шорткати.
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent): void => {
+			// Лише друковані символи без модифікаторів.
+			if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return;
+			if (isBlockingOverlayOpen()) return;
+			if (isFocusInEditable(document.activeElement)) return;
+			const ta = textareaRef.current;
+			if (!ta || ta.disabled) return;
+			e.preventDefault();
+			ta.focus();
+			ta.setRangeText(e.key, ta.selectionStart, ta.selectionEnd, "end");
+		};
+		document.addEventListener("keydown", onKey);
+		return () => document.removeEventListener("keydown", onKey);
+	}, []);
+
+	// Авто-назва чату: session:title від бекенду → оновити локальний title.
+	useEffect(() => {
+		return sessionRunner.subscribe(sessionId, (ev) => {
+			if (ev.type === "title") setTitle(ev.title);
+		});
+	}, [sessionId]);
 
 	// Завантажити каталог підключених провайдерів + шаблони промптів (модель сесії через loadSession).
 	useEffect(() => {
@@ -302,20 +333,17 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 	/** Обрати файли → конвертувати у base64 ImageContent → додати. */
 	const handleAttach = (e: React.ChangeEvent<HTMLInputElement>): void => {
 		const files = Array.from(e.target.files ?? []);
-		for (const file of files) {
-			const reader = new FileReader();
-			reader.onload = (): void => {
-				const result = reader.result;
-				if (typeof result !== "string") return;
-				// result = "data:image/png;base64,..." → дістати base64 + mimeType.
-				const match = /^data:([^;]+);base64,(.+)$/.exec(result);
-				if (!match) return;
-				setImages((prev) => [...prev, { type: "image", data: match[2], mimeType: match[1] }]);
-			};
-			reader.readAsDataURL(file);
-		}
+		filesToImages(files, (imgs) => setImages((prev) => [...prev, ...imgs]));
 		// Скинути input щоб можна було обрати той самий файл повторно.
 		if (fileInputRef.current) fileInputRef.current.value = "";
+	};
+
+	/** Ctrl+V зображень з буфера → прикріпити (заборонити paste-текст для файлів). */
+	const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>): void => {
+		const files = imagesFromPaste(e);
+		if (files.length === 0) return;
+		e.preventDefault();
+		filesToImages(files, (imgs) => setImages((prev) => [...prev, ...imgs]));
 	};
 
 	const removeImage = (index: number): void => {
@@ -482,6 +510,7 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 								value={input}
 								onChange={handleTextareaInput}
 								onKeyDown={handleKeyDown}
+								onPaste={handlePaste}
 								disabled={running}
 							/>
 							{running ? (

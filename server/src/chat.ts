@@ -13,7 +13,7 @@ import {
 import type { AgentEvent, AgentHarnessEvent, AgentTool } from "@coudycode/agent-core";
 import { NodeExecutionEnv } from "@coudycode/agent-core/node";
 import { getModel } from "@coudycode/ai";
-import type { Model, Api, ImageContent } from "@coudycode/ai";
+import { completeSimple, type Model, type Api, type ImageContent, type Context } from "@coudycode/ai";
 import { createAllTools, wrapToolDefinition } from "@coudycode/tools";
 import type { ToolDefinition } from "@coudycode/tools";
 import { Type, type Static } from "typebox";
@@ -72,6 +72,81 @@ export async function resolveModelForChat(
 	const apiKey = await auth.getApiKey(provider);
 	if (!apiKey) return { error: `Провайдер ${provider} не підключено — додайте ключ у Налаштуваннях` };
 	return { model: catalogModel, apiKey };
+}
+
+/** Дефолтна назва сесії (ознака «ще не названо»). */
+const DEFAULT_SESSION_TITLES = new Set(["Новий чат", ""]);
+
+/** Евристична назва: перші ~6 слів першого повідомлення користувача (clean). */
+function heuristicTitle(userMessage: string): string {
+	const clean = userMessage.replace(/\s+/g, " ").trim();
+	if (!clean) return "Новий чат";
+	const words = clean.split(" ").slice(0, 6).join(" ");
+	// Обрізати занадто довгий хвіст (опецьки/команди).
+	return words.length > 50 ? `${words.slice(0, 50).trim()}…` : words;
+}
+
+/**
+ * Згенерувати коротку назву чату (3-6 слів, укр) через легкий LLM-completion.
+ * БЕЗ тулзів, короткий промпт. Повертає назву або null при помилці/відмові.
+ */
+async function llmChatTitle(
+	resolved: ResolvedModel,
+	userMessage: string,
+	assistantText: string,
+): Promise<string | null> {
+	const sys = "Ти генератор коротких назв чатів. Дай стислу назву (3-6 слів, українською) для цього діалогу користувача з AI-асистентом. ТІЛЬКИ саму назву, без лапок, без крапки в кінці, без префіксів на кшталт «Назва:».";
+	// Компактний діалог: лише суть (обрізаємо довгі тексти, щоб зекономити токени).
+	const userSnippet = userMessage.slice(0, 800);
+	const asstSnippet = assistantText.slice(0, 400);
+	const ctx: Context = {
+		systemPrompt: sys,
+		messages: [
+			{ role: "user", content: `Користувач: ${userSnippet}\n\nАсистент (початок): ${asstSnippet}`, timestamp: Date.now() },
+		],
+	};
+	try {
+		const result = await completeSimple(resolved.model, ctx, {
+			apiKey: resolved.apiKey,
+			maxTokens: 30,
+			temperature: 0.3,
+		});
+		if (result.stopReason === "error" || result.stopReason === "aborted") return null;
+		const text = result.content
+			.filter((c): c is { type: "text"; text: string } => c.type === "text")
+			.map((c) => c.text)
+			.join("")
+			.trim();
+		if (!text) return null;
+		// Прибрати зайві лапки/крапки/префікси які LLM іноді додає.
+		let clean = text.replace(/^["«»'«»']+|["«»'«»']+$/g, "").trim();
+		clean = clean.replace(/^(назва|title)\s*[:.]\s*/i, "").trim();
+		clean = clean.replace(/[.!?]+$/g, "").trim();
+		// Обмежити довжину (LLM може розмовитись).
+		if (clean.length > 60) clean = `${clean.slice(0, 60).trim()}…`;
+		return clean || null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Витягти текст з AgentMessage (assistant content — масив TextContent/...).
+ */
+function assistantMessageText(msg: { content: unknown } | undefined | null): string {
+	if (!msg) return "";
+	const content = msg.content;
+	if (typeof content === "string") return content;
+	if (Array.isArray(content)) {
+		return content
+			.map((c) =>
+				c && typeof c === "object" && "text" in c && typeof (c as { text?: unknown }).text === "string"
+				? (c as { text: string }).text
+				: "",
+			)
+			.join("");
+	}
+	return "";
 }
 
 /** Доступний тулз для UI (GET /api/tools). */
@@ -400,6 +475,34 @@ export async function handleChat(
 	// Action: плагіні можуть відреагувати на завершення відповіді (payload: session/model).
 	if (promptError === null) {
 		await hooks.doAction("agent:after-response", opened.session, resolved.model);
+	}
+
+	// Авто-назва чату: після ПЕРШОГО ходу, якщо title ще дефолтний/порожній →
+	// згенерувати через легкий LLM-completion (fallback-евристика) + емітнути session:title.
+	// SSE ще відкритий → клієнт (ChatView + sidebar) оновиться живцем.
+	if (promptError === null) {
+		try {
+			const currentName = await opened.session.getSessionName();
+			const needsTitle = !currentName || DEFAULT_SESSION_TITLES.has(currentName);
+			if (needsTitle) {
+				const ctx = await opened.session.buildContext();
+				// Лише перший хід: рахуємо повідомлення користувача (вкл. те, що щойно відправили).
+				const userCount = ctx.messages.filter((m) => m.role === "user").length;
+				if (userCount <= 1) {
+					const asstText = assistantMessageText(
+						[...ctx.messages].reverse().find((m) => m.role === "assistant"),
+					);
+					let title: string | null = await llmChatTitle(resolved, message, asstText);
+					if (!title) title = heuristicTitle(message);
+					if (title && !DEFAULT_SESSION_TITLES.has(title)) {
+						await sessions.rename(sessionId, title);
+						writeSSE(res, { type: "session:title", sessionId, title });
+					}
+				}
+			}
+		} catch {
+			/* авто-назва необовʼязкова — не ламати стрім */
+		}
 	}
 
 	// Авто-compact при наближенні до ліміту (зберігається автоматично, стрімить session_compact).
