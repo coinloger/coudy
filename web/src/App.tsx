@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "re
 import Sidebar from "./Sidebar";
 import Dashboard from "./Dashboard";
 import PluginManager from "./PluginManager";
+import LibraryPage from "./LibraryPage";
 import ChatView from "./ChatView";
 import Settings from "./Settings";
 import Playground from "./playground/Playground";
@@ -141,6 +142,14 @@ export default function App(): React.ReactNode {
         action: () => navigate("/plugins"),
       },
       {
+        id: "core:library",
+        label: "Бібліотека функцій",
+        icon: "Boxes",
+        keywords: "library functions skills бібліотека функції",
+        group: "Навігація",
+        action: () => navigate("/library"),
+      },
+      {
         id: "core:settings",
         label: "Налаштування",
         icon: "Settings",
@@ -197,6 +206,7 @@ export default function App(): React.ReactNode {
           <Route path="/" element={<Dashboard widgets={ui.dashboardWidgets} />} />
           <Route path="/dashboard" element={<Dashboard widgets={ui.dashboardWidgets} />} />
           <Route path="/plugins" element={<PluginManager />} />
+          <Route path="/library" element={<LibraryPage />} />
           <Route path="/settings" element={<Settings tabs={ui.settingsTabs} />} />
           <Route path="/playground" element={<Playground />} />
           <Route

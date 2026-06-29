@@ -35,6 +35,16 @@ import { PromptTemplateStore, SessionPromptBinding } from "./prompts.js";
 import { PluginSessionRegistryImpl, PluginSessionStore } from "./plugin-sessions.js";
 import { handleChat, handleCompact, getGlobalTools } from "./chat.js";
 import { processRegistry } from "./processes.js";
+import {
+	handleLibraryList,
+	handleLibraryGet,
+	handleLibrarySearch,
+	handleLibraryCreate,
+	handleLibraryUpdate,
+	handleLibraryDelete,
+	handleLibraryRun,
+	warmupEmbeddings,
+} from "./library.js";
 
 export interface CoudyServerOptions {
   port?: number;
@@ -139,6 +149,9 @@ export class CoudyServer {
 
     // --- Hook-точка: server:start (action) ---
     await this.hooks.doAction("server:start", this.port);
+
+    // Розігріти embeddings-модель бібліотеки фоново (не блокувати старт).
+    void warmupEmbeddings();
 
     console.log(`[coudycode] Сервер запущено: http://localhost:${this.port}`);
   }
@@ -645,6 +658,52 @@ export class CoudyServer {
       }
       this.sessionPromptBindings.removeByTemplate(id);
       this.sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    // === Бібліотека функцій (skill library) ===
+
+    // POST /api/library/search body {query} — семантичний пошук.
+    if (method === "POST" && pathname === "/api/library/search") {
+      await handleLibrarySearch(req, res);
+      return;
+    }
+
+    // POST /api/library — create нової функції.
+    if (method === "POST" && pathname === "/api/library") {
+      await handleLibraryCreate(req, res);
+      return;
+    }
+
+    // GET /api/library — список усіх функцій.
+    if (method === "GET" && pathname === "/api/library") {
+      handleLibraryList(req, res);
+      return;
+    }
+
+    // /api/library/:name — GET (одна з кодом) / PATCH (modify) / DELETE.
+    const libraryItemMatch = /^\/api\/library\/([^/]+)$/.exec(pathname);
+    if (libraryItemMatch) {
+      const name = decodeURIComponent(libraryItemMatch[1]);
+      if (method === "GET") {
+        handleLibraryGet(req, res, name);
+        return;
+      }
+      if (method === "PATCH") {
+        await handleLibraryUpdate(req, res, name);
+        return;
+      }
+      if (method === "DELETE") {
+        handleLibraryDelete(req, res, name);
+        return;
+      }
+    }
+
+    // POST /api/library/:name/run body {params} — виконати функцію (тестування).
+    const libraryRunMatch = /^\/api\/library\/([^/]+)\/run$/.exec(pathname);
+    if (method === "POST" && libraryRunMatch) {
+      const name = decodeURIComponent(libraryRunMatch[1]);
+      await handleLibraryRun(req, res, name);
       return;
     }
 

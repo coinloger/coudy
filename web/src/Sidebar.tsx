@@ -83,6 +83,7 @@ const BUILTIN_FOOTER: {
     match: (p) => p === "/" || p === "/dashboard",
   },
   { id: "plugins", label: "Плагіни", icon: Puzzle, path: "/plugins", match: (p) => p === "/plugins" },
+  { id: "library", label: "Бібліотека", icon: Boxes, path: "/library", match: (p) => p === "/library" },
   { id: "settings", label: "Налаштування", icon: SettingsIcon, path: "/settings", match: (p) => p === "/settings" },
 ];
 

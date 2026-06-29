@@ -92,3 +92,34 @@ export interface LoadedFrontendPlugin {
   manifest: PluginManifest;
   api: ApiPlugin;
 }
+
+// === Бібліотека функцій (skill library) ===
+
+export interface LibraryFunction {
+  name: string;
+  category?: string;
+  description: string;
+  params?: Record<string, ParamSpec>;
+  tags: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ParamSpec {
+  type: "string" | "number" | "boolean";
+  required?: boolean;
+  desc?: string;
+}
+
+export interface LibraryFunctionDetail extends LibraryFunction {
+  code: string;
+}
+
+export interface SearchResultItem {
+  name: string;
+  description: string;
+  category?: string;
+  params?: Record<string, ParamSpec>;
+  tags: string[];
+  score: number;
+}

@@ -12,6 +12,7 @@
     "@coudycode/agent-core": "*",
     "@coudycode/ai": "*",
     "@coudycode/core": "*",
+    "@coudycode/library": "*",
     "@coudycode/tools": "*"
   },
   "devDependencies": {
