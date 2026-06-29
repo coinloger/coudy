@@ -548,9 +548,26 @@
 .cc-ui-working {
 	display: inline-flex;
 	align-items: center;
-	gap: 0.4rem;
+	gap: 0.5em;
 	color: var(--pi-text-muted);
-	font-size: 0.8rem;
+	font-size: 14px;
+}
+/* label-сегмент (Working...) */
+.cc-ui-working-label {
+	white-space: nowrap;
+}
+/* elapsed-сегмент (9m 31s) */
+.cc-ui-working-elapsed {
+	font-variant-numeric: tabular-nums;
+}
+/* група ↓input ↑output */
+.cc-ui-working-tokens {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35em;
+}
+.cc-ui-working-seg {
+	white-space: nowrap;
 }
 .cc-ui-spinner {
 	width: 1rem;

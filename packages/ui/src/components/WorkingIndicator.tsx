@@ -67,9 +67,16 @@ export function WorkingIndicator({
 	return (
 		<span className="cc-ui-working" role="status" aria-label={label}>
 			<span className="cc-ui-braille" aria-hidden="true">{frame}</span>
-			{label}
-			{elapsed !== null ? `(${elapsed})` : ""}
-			{showTokens ? `· ↓${formatTokenCount(inputTokens!)} ↑${formatTokenCount(outputTokens!)}` : ""}
+			<span className="cc-ui-working-label">{label}</span>
+			{elapsed !== null && (
+				<span className="cc-ui-working-seg cc-ui-working-elapsed">({elapsed})</span>
+			)}
+			{showTokens && (
+				<span className="cc-ui-working-tokens">
+					<span className="cc-ui-working-seg">↓{formatTokenCount(inputTokens!)}</span>
+					<span className="cc-ui-working-seg">↑{formatTokenCount(outputTokens!)}</span>
+				</span>
+			)}
 		</span>
 	);
 }
