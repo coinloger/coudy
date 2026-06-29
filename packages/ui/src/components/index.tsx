@@ -13,4 +13,10 @@ export { ToolGroup, type ToolGroupProps, type ToolGroupEntry } from "./ToolGroup
 export { ToolResult, type ToolResultProps, type ToolResultDiff } from "./ToolResult.tsx";
 export { Diff, type DiffProps } from "./Diff.tsx";
 export { ThinkingBlock, type ThinkingBlockProps } from "./ThinkingBlock.tsx";
-export { WorkingIndicator, type WorkingIndicatorProps } from "./WorkingIndicator.tsx";
+export {
+	WorkingIndicator,
+	type WorkingIndicatorProps,
+	formatElapsed,
+	formatTokenCount,
+} from "./WorkingIndicator.tsx";
+export { extractMessageText, extractMessageImages } from "./message-utils.ts";

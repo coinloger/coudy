@@ -4,6 +4,7 @@ import type { ImageContent, TextContent } from "@coudycode/ai";
 import { ImageLightbox } from "./ImageLightbox.tsx";
 import { MessageActionsBar } from "./message-actions.tsx";
 import type { MessageAction } from "./message-actions.tsx";
+import { extractMessageText } from "./message-utils.ts";
 
 export interface UserMessageProps {
 	message: UserMessageType;
@@ -13,7 +14,7 @@ export interface UserMessageProps {
 
 /** Повідомлення користувача. */
 export function UserMessage({ message, actions }: UserMessageProps): React.ReactNode {
-	const text = extractText(message.content);
+	const text = extractMessageText(message as never);
 	const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 	return (
 		<div className="cc-ui-msg cc-ui-msg-user">
@@ -25,14 +26,6 @@ export function UserMessage({ message, actions }: UserMessageProps): React.React
 			{lightboxSrc && <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
 		</div>
 	);
-}
-
-function extractText(content: string | (TextContent | ImageContent)[]): string {
-	if (typeof content === "string") return content;
-	return content
-		.filter((c): c is TextContent => c.type === "text")
-		.map((c) => c.text)
-		.join("\n");
 }
 
 function renderImages(

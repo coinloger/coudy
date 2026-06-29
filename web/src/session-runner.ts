@@ -17,6 +17,8 @@ export interface SessionStreamState {
 	working: ConversationState;
 	running: boolean;
 	error: string | null;
+	/** Мітка часу старту ходу (для elapsed-індикатора); undefined коли idle. */
+	startTime?: number;
 }
 
 /** Стабільний idle-snapshot (те саме посилання, коли сесія не стрімиться). */
@@ -24,6 +26,7 @@ const IDLE_SNAPSHOT: SessionStreamState = {
 	working: initialConversationState,
 	running: false,
 	error: null,
+	startTime: undefined,
 };
 
 /** Подія subscribeAll (для toast-ів + sidebar-індикаторів). */
@@ -39,6 +42,8 @@ interface ActiveStream {
 	working: ConversationState;
 	running: boolean;
 	error: string | null;
+	/** Мітка часу старту ходу (мс, Date.now()). */
+	startTime: number;
 	/** Кешований snapshot (стабільне посилання між змінами → useSyncExternalStore без циклу). */
 	snapshot: SessionStreamState;
 }
@@ -77,7 +82,12 @@ class SessionRunner {
 
 	/** Перебудувати snapshot стріму (стабільне посилання між змінами). */
 	private rebuildSnapshot(s: ActiveStream): void {
-		s.snapshot = { working: s.working, running: s.running, error: s.error };
+		s.snapshot = {
+			working: s.working,
+			running: s.running,
+			error: s.error,
+			startTime: s.running ? s.startTime : undefined,
+		};
 	}
 
 	/** Підписатись на події однієї сесії. */
@@ -122,6 +132,7 @@ class SessionRunner {
 			working: { ...initialConversationState, working: true },
 			running: true,
 			error: null,
+			startTime: Date.now(),
 			snapshot: { working: initialConversationState, running: false, error: null },
 		};
 		this.rebuildSnapshot(stream);

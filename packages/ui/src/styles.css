@@ -49,13 +49,16 @@
 	max-width: 100%;
 	position: relative;
 }
-/* Дії на повідомленнях (від плагінів ui:message-actions) — видимі при hover. */
+/* Дії на повідомленнях (від плагінів ui:message-actions + built-in) — плаваюча панель угорі-праворуч, видимі при hover. */
 .cc-ui-msg-actions {
+	position: absolute;
+	top: 0.35rem;
+	right: 0.35rem;
 	display: flex;
-	gap: 0.25rem;
-	margin-top: 0.35rem;
+	gap: 0.2rem;
 	opacity: 0;
 	transition: opacity 0.12s ease;
+	z-index: 2;
 }
 .cc-ui-msg:hover > .cc-ui-msg-actions,
 .cc-ui-msg:focus-within > .cc-ui-msg-actions {
@@ -66,14 +69,32 @@
 	background: var(--pi-surface, #fff);
 	color: var(--pi-text-muted, #6c6c6c);
 	font-size: 0.7rem;
-	padding: 0.1rem 0.45rem;
+	padding: 0.15rem 0.4rem;
 	border-radius: 0.3rem;
 	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.2rem;
 	transition: background 0.1s ease, color 0.1s ease;
 }
 .cc-ui-msg-action:hover {
 	background: var(--pi-accent, #5a8080);
 	color: #fff;
+}
+.cc-ui-msg-action-icon {
+	flex-shrink: 0;
+}
+/* readonly-текст (час) — без бордеру/фону, без hover-ефекту. */
+.cc-ui-msg-action-readonly {
+	border: none;
+	background: transparent;
+	cursor: default;
+	color: var(--pi-text-muted, #9a9a9a);
+	opacity: 0.85;
+}
+.cc-ui-msg-action-readonly:hover {
+	background: transparent;
+	color: var(--pi-text-muted, #9a9a9a);
 }
 .cc-ui-msg-user {
 	background: var(--pi-user-msg-bg);
@@ -527,6 +548,16 @@
 	border-top-color: var(--pi-accent);
 	border-radius: 50%;
 	animation: cc-ui-spin 0.7s linear infinite;
+}
+/* Braille-кадр спінера: моноширинний + фіксована ширина щоб рядок не тремтів. */
+.cc-ui-braille {
+	font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+	display: inline-block;
+	width: 1ch;
+	text-align: center;
+	line-height: 1;
+	color: var(--pi-accent);
+	font-variant-numeric: tabular-nums;
 }
 @keyframes cc-ui-spin {
 	to {

@@ -13,6 +13,7 @@ export function useSessionRunner(sessionId: string): {
 	working: SessionStreamState["working"];
 	running: boolean;
 	error: string | null;
+	startTime?: number;
 	start: (message: string, images?: import("@coudycode/ai").ImageContent[]) => void;
 	abort: () => void;
 } {
@@ -34,6 +35,7 @@ export function useSessionRunner(sessionId: string): {
 		working: snap.working,
 		running: snap.running,
 		error: snap.error,
+		startTime: snap.startTime,
 		start: (message: string, images?: import("@coudycode/ai").ImageContent[]): void =>
 			sessionRunner.start(sessionId, message, images),
 		abort: (): void => {

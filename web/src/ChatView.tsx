@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Paperclip, ArrowUp, Square, Gauge, Layers, X } from "lucide-react";
 import type { AgentMessage } from "@coudycode/agent-core";
 import type { ImageContent, ToolCall as ToolCallContent } from "@coudycode/ai";
 import {
 	ConversationView,
 	ToolCall,
+	WorkingIndicator,
+	extractMessageText,
+	extractMessageImages,
 	type ToolCallStatus,
 } from "@coudycode/ui";
 import "@coudycode/ui/styles.css";
@@ -63,7 +66,7 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 		pct: number;
 	} | null>(null);
 	// Поточний хід (стрімиться) — з SessionRunner (фоновий агент, переживає навігацію).
-	const { working: live, running, error: runError, start: runnerStart, abort: runnerAbort } = useSessionRunner(sessionId);
+	const { working: live, running, error: runError, start: runnerStart, abort: runnerAbort, startTime } = useSessionRunner(sessionId);
 	const [input, setInput] = useState("");
 	const [images, setImages] = useState<ImageContent[]>([]);
 	const [compaction, setCompaction] = useState<CompactionState | null>(null);
@@ -85,6 +88,77 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 	const messages: AgentMessage[] = [...committed, ...live.messages];
 	const toolStatus: Record<string, ToolCallStatus> = { ...committedStatus, ...live.toolStatus };
 	const error = runError;
+
+	// Accumulated ↓input/↑output-токени по assistant-повідомленнях поточного ходу.
+	const usage = sumUsage(live.messages, live.streamingMessage);
+
+	// Тик раз/сек для оновлення elapsed-індикатора (лише коли агент працює).
+	const [, setTick] = useState(0);
+	useEffect(() => {
+		if (!live.working) return;
+		const id = setInterval(() => setTick((t) => t + 1), 1000);
+		return () => clearInterval(id);
+	}, [live.working]);
+
+	const elapsedMs = startTime ? Date.now() - startTime : undefined;
+
+	// Built-in hover-дії на повідомленнях: copy (з фідбеком), time (readonly), retry (user-only).
+	const [copiedKey, setCopiedKey] = useState<string | null>(null);
+	const keyFor = (m: AgentMessage): string => `${m.role}:${m.timestamp}`;
+	const builtInActions = useMemo<MessageAction[]>(() => {
+		return [
+			{
+				id: "copy",
+				label: (m: AgentMessage) => (copiedKey === keyFor(m) ? "Скопійовано" : "Копіювати"),
+				icon: "Copy",
+				onClick: (m: AgentMessage) => {
+					void navigator.clipboard
+						.writeText(extractMessageText(m))
+						.then(() => {
+							setCopiedKey(keyFor(m));
+							setTimeout(
+								() => setCopiedKey((cur) => (cur === keyFor(m) ? null : cur)),
+								1500,
+							);
+						})
+						.catch(() => undefined);
+				},
+			},
+			{
+				id: "time",
+				label: (m: AgentMessage) =>
+					new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+				display: true,
+			},
+			{
+				id: "retry",
+				label: "Повторити",
+				icon: "RotateCcw",
+				show: (m: AgentMessage) => m.role === "user",
+				onClick: (m: AgentMessage) => {
+					if (running) return;
+					const text = extractMessageText(m);
+					const imgs = extractMessageImages(m);
+					if (!text && imgs.length === 0) return;
+					runnerStart(text, imgs.length ? imgs : undefined);
+				},
+			},
+		];
+	}, [copiedKey, running, runnerStart]);
+
+	// Мердж: built-in actions спереду, плагінні — ззаду (без дублів за id).
+	const combinedActions = useMemo<MessageAction[]>(() => {
+		const seen = new Set(builtInActions.map((a) => a.id));
+		const merged = [...builtInActions];
+		for (const a of messageActions) {
+			if (!seen.has(a.id)) {
+				seen.add(a.id);
+				merged.push(a);
+			}
+		}
+		return merged;
+	}, [builtInActions, messageActions]);
+
 
 	// Завантажити історію сесії при зміні sessionId.
 	const loadSession = useCallback(async () => {
@@ -428,7 +502,7 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 							streamingMessage={live.streamingMessage}
 							streamingTextIndex={live.streamingTextIndex}
 							streamingThinkingIndex={live.streamingThinkingIndex}
-							messageActions={messageActions}
+							messageActions={combinedActions}
 						/>
 					)}
 					{/* Compaction як tool call: running (спінер) → done (success + summary peek). */}
@@ -441,16 +515,16 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 							</ToolCall>
 						</div>
 					)}
-					{/* Standalone preloader: 3 крапки безперервно від відправки доки не пішов текст/thinking-стрім. */}
+					{/* Standalone індикатор роботи (braille-спінер + elapsed + ↓↑токени) доки не пішов текст/thinking-стрім. */}
 					{live.working &&
 						live.streamingTextIndex === undefined &&
 						live.streamingThinkingIndex === undefined && (
 						<div className="cc-ui-msg cc-ui-msg-assistant">
-							<span className="cc-ui-streaming-dots" aria-hidden="true">
-								<span />
-								<span />
-								<span />
-							</span>
+							<WorkingIndicator
+								elapsedMs={elapsedMs}
+								inputTokens={usage.input}
+								outputTokens={usage.output}
+							/>
 						</div>
 					)}
 					{error && (
@@ -545,6 +619,24 @@ function formatTokens(n: number): string {
 	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
 	if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
 	return String(n);
+}
+
+/**
+ * Accumulated input/output-токени по assistant-повідомленнях ходу
+ * (вкл. streamingMessage якщо воно має usage).
+ */
+function sumUsage(messages: AgentMessage[], streaming?: AgentMessage): { input: number; output: number } {
+	let input = 0;
+	let output = 0;
+	const acc = (msg: AgentMessage): void => {
+		if (msg.role !== "assistant") return;
+		const usage = (msg as { usage?: { input?: number; output?: number } }).usage;
+		if (usage && typeof usage.input === "number") input += usage.input;
+		if (usage && typeof usage.output === "number") output += usage.output;
+	};
+	for (const m of messages) acc(m);
+	if (streaming) acc(streaming);
+	return { input, output };
 }
 
 /** Індикатор використання контексту: іконка + токени (без бару). */
