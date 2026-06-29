@@ -76,13 +76,21 @@ async function createHarness(
 	session: Session,
 	cwd: string,
 	hooks: HookEngine,
-	basePrompt: string,
+	template: { content: string; tools: string[] | null } | null,
 ): Promise<AgentHarness> {
 	const env = new NodeExecutionEnv({ cwd });
-	// Базові інструменти → плагіни можуть додати свої через filter «tools:register».
-	const baseTools = createAllTools(cwd);
+	// Базові інструменти; фільтруємо за toolset-ом шаблону (null=усі, []=без, [...]=ці).
+	let baseTools = createAllTools(cwd);
+	if (template && template.tools !== null) {
+		const want = new Set(template.tools);
+		baseTools = baseTools.filter((t) => want.has(t.name));
+	}
+	// Плагіни можуть додати свої через filter «tools:register» (поверх відфільтрованих).
 	const tools = await hooks.applyFilters<AgentTool[]>("tools:register", baseTools);
-	// Системний промпт: base = шаблон сесії ?? built-in → плагіни можуть модифікувати через «prompt:system».
+	// Системний промпт: content шаблону ?? built-in (з поточним набором тулзів).
+	const basePrompt = template
+		? template.content
+		: buildSystemPrompt({ cwd, tools: tools.map((t) => t.name) });
 	const systemPrompt = await hooks.applyFilters<string>("prompt:system", basePrompt);
 	return new AgentHarness({
 		env,
@@ -148,22 +156,19 @@ async function injectContextProvider(
 }
 
 /**
- * Резолвити base-системний промпт сесії: шаблон ?? built-in (динамічний pi-промпт).
- * Шаблон — статичний текст юзера; built-in — buildSystemPrompt({tools ?? усі 8, cwd}).
+ * Резолвити шаблон сесії: {content, tools} або null (built-in).
+ * content — системний промпт; tools — набір тулзів шаблону (null=усі, []=без, [...]=ці).
  */
-function resolveBasePrompt(
+function resolveTemplate(
 	sessionId: string,
 	promptTemplates: PromptTemplateStore,
 	promptBindings: SessionPromptBinding,
-	cwd: string,
-	tools?: string[],
-): string {
+): { content: string; tools: string[] | null } | null {
 	const templateId = promptBindings.get(sessionId);
-	if (templateId) {
-		const template = promptTemplates.get(templateId);
-		if (template) return template.content;
-	}
-	return buildSystemPrompt({ cwd, ...(tools ? { tools } : {}) });
+	if (!templateId) return null;
+	const template = promptTemplates.get(templateId);
+	if (!template) return null;
+	return { content: template.content, tools: template.tools ?? null };
 }
 
 /** Встановити SSE-заголовки. */
@@ -240,7 +245,7 @@ export async function handleChat(
 				opened.session,
 				cwd,
 				hooks,
-				resolveBasePrompt(sessionId, promptTemplates, promptBindings, cwd),
+				resolveTemplate(sessionId, promptTemplates, promptBindings),
 			);
 
 	// Скасування при disconnect.
@@ -345,7 +350,7 @@ export async function handleCompact(
 	const ownership = resolvePluginOwnership(sessionId, pluginSessionRegistry, pluginSessionStore);
 	const harness = ownership
 		? await createPluginHarness(resolved, opened.session, cwd, ownership)
-		: await createHarness(resolved, opened.session, cwd, hooks, resolveBasePrompt(sessionId, promptTemplates, promptBindings, cwd));
+		: await createHarness(resolved, opened.session, cwd, hooks, resolveTemplate(sessionId, promptTemplates, promptBindings));
 	const customInstructions =
 		typeof body.customInstructions === "string" ? body.customInstructions : undefined;
 

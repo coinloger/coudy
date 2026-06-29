@@ -527,8 +527,14 @@ export class CoudyServer {
         this.sendJson(res, 400, { error: "Потрібне поле name" });
         return;
       }
+      // tools: null = усі; [] = без; [...] = лише ці. Масив рядків або null.
+      const tools = Array.isArray(body?.tools)
+        ? body.tools.filter((t): t is string => typeof t === "string")
+        : body?.tools === null
+          ? null
+          : undefined;
       try {
-        const created = this.promptTemplates.create(name, content);
+        const created = this.promptTemplates.create(name, content, tools);
         this.sendJson(res, 201, created);
       } catch (e) {
         this.sendJson(res, 400, { error: e instanceof Error ? e.message : String(e) });
@@ -541,9 +547,14 @@ export class CoudyServer {
     if (method === "PATCH" && promptMatch) {
       const id = decodeURIComponent(promptMatch[1]);
       const body = await this.readJsonBody(req);
-      const patch: { name?: string; content?: string } = {};
+      const patch: { name?: string; content?: string; tools?: string[] | null } = {};
       if (typeof body?.name === "string") patch.name = body.name;
       if (typeof body?.content === "string") patch.content = body.content;
+      if (Array.isArray(body?.tools)) {
+        patch.tools = body.tools.filter((t): t is string => typeof t === "string");
+      } else if (body?.tools === null) {
+        patch.tools = null;
+      }
       try {
         const updated = this.promptTemplates.update(id, patch);
         if (!updated) {

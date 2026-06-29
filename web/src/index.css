@@ -756,3 +756,40 @@ body {
 .cc-plugin-card .card-body {
 	padding: 1rem 1.25rem;
 }
+
+/* ===== Селектор тулзів у формі шаблону промпту ===== */
+.cc-tool-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px 10px;
+	border: 1px solid var(--pi-border-muted, #d0d0d0);
+	border-radius: 14px;
+	cursor: pointer;
+	user-select: none;
+	background: var(--pi-card-bg, #fff);
+	font-size: 13px;
+	color: var(--pi-text-muted, #6c6c6c);
+	transition: border-color 0.1s, background 0.1s;
+}
+
+.cc-tool-chip:hover {
+	border-color: var(--pi-accent, #5a8080);
+}
+
+.cc-tool-chip input {
+	margin: 0;
+	cursor: pointer;
+}
+
+.cc-tool-chip:has(input:checked) {
+	border-color: var(--pi-accent, #5a8080);
+	background: color-mix(in srgb, var(--pi-accent, #5a8080) 12%, transparent);
+	color: var(--pi-text, #1f2328);
+	font-weight: 500;
+}
+
+.cc-prompt-tools-badge {
+	font-size: 11px;
+	text-transform: lowercase;
+}

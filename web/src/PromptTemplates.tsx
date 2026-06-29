@@ -9,9 +9,32 @@ interface FormState {
 	id: string | null;
 	name: string;
 	content: string;
+	/** null = усі тулзи (дефолт); [] = без; [...] = лише ці. */
+	tools: string[] | null;
 }
 
-const EMPTY_FORM: FormState = { id: null, name: "", content: "" };
+const EMPTY_FORM: FormState = { id: null, name: "", content: "", tools: null };
+
+/** 8 базових тулзів coudycode (для селектора у формі шаблону). */
+
+/** Короткі лейбли тулзів для UI. */
+const TOOL_LABELS: Record<string, string> = {
+	read: "read",
+	bash: "bash",
+	edit: "edit",
+	write: "write",
+	grep: "grep",
+	find: "find",
+	ls: "ls",
+	fetch: "fetch",
+};
+
+/** Бейдж тулзів: «Усі» / «Без» / скорочений список. */
+function toolsBadge(tools: string[] | null | undefined): string {
+	if (tools === null || tools === undefined) return "Усі тулзи";
+	if (tools.length === 0) return "Без тулзів";
+	return tools.map((t) => TOOL_LABELS[t] ?? t).join(", ");
+}
 
 /** Таба налаштувань «Шаблони системних промптів» — CRUD через /api/prompts. */
 export default function PromptTemplates(_props: PromptTemplatesProps): React.ReactNode {
@@ -53,7 +76,7 @@ export default function PromptTemplates(_props: PromptTemplatesProps): React.Rea
 				{
 					method: isEdit ? "PATCH" : "POST",
 					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ name, content: form.content }),
+					body: JSON.stringify({ name, content: form.content, tools: form.tools }),
 				},
 			);
 			if (!r.ok) {
@@ -110,7 +133,7 @@ export default function PromptTemplates(_props: PromptTemplatesProps): React.Rea
 	};
 
 	const startEdit = (t: PromptTemplateEntry): void => {
-		setForm({ id: t.id, name: t.name, content: t.content });
+		setForm({ id: t.id, name: t.name, content: t.content, tools: t.tools ?? null });
 		setError(null);
 	};
 
@@ -160,6 +183,7 @@ export default function PromptTemplates(_props: PromptTemplatesProps): React.Rea
 								<div className="cc-prompt-info flex-grow-1 min-w-0">
 									<div className="cc-prompt-name fw-semibold text-truncate">{t.name}</div>
 									<div className="cc-prompt-preview text-muted small">{t.content || "(порожній)"}</div>
+									<div className="cc-prompt-tools-badge badge bg-light text-secondary border mt-1 fw-normal">{toolsBadge(t.tools)}</div>
 								</div>
 								<div className="cc-prompt-actions d-flex align-items-center flex-shrink-0 gap-1">
 									<button
@@ -210,6 +234,133 @@ export default function PromptTemplates(_props: PromptTemplatesProps): React.Rea
 								value={form.content}
 								onChange={(e) => setForm({ ...form, content: e.target.value })}
 							/>
+						</div>
+						<div className="mb-3">
+							<label className="form-label small fw-semibold">Інструменти</label>
+							<div className="d-flex align-items-center gap-2 mb-2">
+								<div className="form-check form-switch m-0">
+									<input
+										className="form-check-input"
+										type="checkbox"
+										role="switch"
+										id="tools-all"
+										checked={form.tools === null}
+										onChange={(e) => setForm({ ...form, tools: e.target.checked ? null : [] })}
+									/>
+									<label className="form-check-label small" htmlFor="tools-all">Усі</label>
+								</div>
+								{form.tools !== null && (
+									<button type="button" className="btn btn-sm btn-link p-0" onClick={() => setForm({ ...form, tools: [] })}>Очистити</button>
+								)}
+							</div>
+							{form.tools !== null && (
+								<div className="d-flex flex-wrap gap-2">
+								<label key={"read"} className="cc-tool-chip">
+									<input
+										type="checkbox"
+										className="form-check-input"
+										checked={form.tools?.includes("read") ?? false}
+										onChange={(e) => {
+											const set = new Set(form.tools ?? []);
+											if (e.target.checked) set.add("read"); else set.delete("read");
+											setForm({ ...form, tools: Array.from(set) });
+										}}
+									/>
+									<span className="small">read</span>
+								</label>
+								<label key={"bash"} className="cc-tool-chip">
+									<input
+										type="checkbox"
+										className="form-check-input"
+										checked={form.tools?.includes("bash") ?? false}
+										onChange={(e) => {
+											const set = new Set(form.tools ?? []);
+											if (e.target.checked) set.add("bash"); else set.delete("bash");
+											setForm({ ...form, tools: Array.from(set) });
+										}}
+									/>
+									<span className="small">bash</span>
+								</label>
+								<label key={"edit"} className="cc-tool-chip">
+									<input
+										type="checkbox"
+										className="form-check-input"
+										checked={form.tools?.includes("edit") ?? false}
+										onChange={(e) => {
+											const set = new Set(form.tools ?? []);
+											if (e.target.checked) set.add("edit"); else set.delete("edit");
+											setForm({ ...form, tools: Array.from(set) });
+										}}
+									/>
+									<span className="small">edit</span>
+								</label>
+								<label key={"write"} className="cc-tool-chip">
+									<input
+										type="checkbox"
+										className="form-check-input"
+										checked={form.tools?.includes("write") ?? false}
+										onChange={(e) => {
+											const set = new Set(form.tools ?? []);
+											if (e.target.checked) set.add("write"); else set.delete("write");
+											setForm({ ...form, tools: Array.from(set) });
+										}}
+									/>
+									<span className="small">write</span>
+								</label>
+								<label key={"grep"} className="cc-tool-chip">
+									<input
+										type="checkbox"
+										className="form-check-input"
+										checked={form.tools?.includes("grep") ?? false}
+										onChange={(e) => {
+											const set = new Set(form.tools ?? []);
+											if (e.target.checked) set.add("grep"); else set.delete("grep");
+											setForm({ ...form, tools: Array.from(set) });
+										}}
+									/>
+									<span className="small">grep</span>
+								</label>
+								<label key={"find"} className="cc-tool-chip">
+									<input
+										type="checkbox"
+										className="form-check-input"
+										checked={form.tools?.includes("find") ?? false}
+										onChange={(e) => {
+											const set = new Set(form.tools ?? []);
+											if (e.target.checked) set.add("find"); else set.delete("find");
+											setForm({ ...form, tools: Array.from(set) });
+										}}
+									/>
+									<span className="small">find</span>
+								</label>
+								<label key={"ls"} className="cc-tool-chip">
+									<input
+										type="checkbox"
+										className="form-check-input"
+										checked={form.tools?.includes("ls") ?? false}
+										onChange={(e) => {
+											const set = new Set(form.tools ?? []);
+											if (e.target.checked) set.add("ls"); else set.delete("ls");
+											setForm({ ...form, tools: Array.from(set) });
+										}}
+									/>
+									<span className="small">ls</span>
+								</label>
+								<label key={"fetch"} className="cc-tool-chip">
+									<input
+										type="checkbox"
+										className="form-check-input"
+										checked={form.tools?.includes("fetch") ?? false}
+										onChange={(e) => {
+											const set = new Set(form.tools ?? []);
+											if (e.target.checked) set.add("fetch"); else set.delete("fetch");
+											setForm({ ...form, tools: Array.from(set) });
+										}}
+									/>
+									<span className="small">fetch</span>
+								</label>
+							</div>
+							)}
 						</div>
 						<div className="d-flex gap-2">
 							<button

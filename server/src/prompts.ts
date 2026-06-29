@@ -19,6 +19,13 @@ export interface PromptTemplate {
 	name: string;
 	content: string;
 	createdAt: string;
+	/**
+	 * Набір інструментів агента для цього шаблону (per-template toolset):
+	 * - null (дефолт) → усі базові інструменти;
+	 * - [] → без інструментів (агент лише текст);
+	 * - ["read","grep",…] → лише ці.
+	 */
+	tools?: string[] | null;
 }
 
 /** Формат файлу prompts.json. */
@@ -90,6 +97,7 @@ function getDefaultTemplates(): PromptTemplate[] {
 			name: "Coding",
 			content: staticCodingPrompt(),
 			createdAt: new Date().toISOString(),
+			tools: null,
 		},
 		{
 			id: randomUUID(),
@@ -119,6 +127,7 @@ function getDefaultTemplates(): PromptTemplate[] {
 				"- Усі prose, коментарі, errors — українською (якщо не цитуєш код/логи).",
 			].join("\n"),
 			createdAt: new Date().toISOString(),
+			tools: ["read","bash","grep","find","ls","fetch"],
 		},
 		{
 			id: randomUUID(),
@@ -145,6 +154,7 @@ function getDefaultTemplates(): PromptTemplate[] {
 				"- Всю істотну роботу виконують workers.",
 			].join("\n"),
 			createdAt: new Date().toISOString(),
+			tools: ["read","grep","find","ls"],
 		},
 		{
 			id: randomUUID(),
@@ -171,6 +181,7 @@ function getDefaultTemplates(): PromptTemplate[] {
 				"- Не завершуй turn без `reply`.",
 			].join("\n"),
 			createdAt: new Date().toISOString(),
+			tools: ["read","grep","find","ls"],
 		},
 	];
 }
@@ -223,7 +234,7 @@ export class PromptTemplateStore {
 	}
 
 	/** Створити шаблон. Валідація: name непорожнє. */
-	create(name: string, content: string): PromptTemplate {
+	create(name: string, content: string, tools?: string[] | null): PromptTemplate {
 		const trimmedName = name.trim();
 		if (!trimmedName) throw new Error("Потрібне поле name");
 		const data = readJson<PromptsFile>(this.path, { templates: [] });
@@ -232,14 +243,15 @@ export class PromptTemplateStore {
 			name: trimmedName,
 			content,
 			createdAt: new Date().toISOString(),
+			...(tools === undefined ? {} : { tools }),
 		};
 		data.templates.push(template);
 		writeJson(this.path, data);
 		return template;
 	}
 
-	/** Оновити name/content шаблону. null якщо id не знайдено. */
-	update(id: string, patch: { name?: string; content?: string }): PromptTemplate | null {
+	/** Оновити name/content/tools шаблону. null якщо id не знайдено. */
+	update(id: string, patch: { name?: string; content?: string; tools?: string[] | null }): PromptTemplate | null {
 		const data = readJson<PromptsFile>(this.path, { templates: [] });
 		const idx = data.templates.findIndex((t) => t.id === id);
 		if (idx === -1) return null;
@@ -250,6 +262,10 @@ export class PromptTemplateStore {
 		}
 		if (typeof patch.content === "string") {
 			data.templates[idx]!.content = patch.content;
+		}
+		// tools: null = усі; [] = без; [...] = лише ці. undefined → не чіпати.
+		if (patch.tools !== undefined) {
+			data.templates[idx]!.tools = Array.isArray(patch.tools) ? patch.tools : null;
 		}
 		writeJson(this.path, data);
 		return data.templates[idx]!;

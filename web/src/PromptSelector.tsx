@@ -7,6 +7,8 @@ export interface PromptTemplateEntry {
 	name: string;
 	content: string;
 	createdAt: string;
+	/** null = усі тулзи; [] = без; [...] = лише ці. */
+	tools?: string[] | null;
 }
 
 export interface PromptSelectorProps {
