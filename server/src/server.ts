@@ -157,8 +157,9 @@ export class CoudyServer {
     // --- Hook-точка: server:start (action) ---
     await this.hooks.doAction("server:start", this.port);
 
-    // Розігріти embeddings-модель бібліотеки фоново (не блокувати старт).
-    void warmupEmbeddings();
+    // Embeddings-модель НЕ розігріваємо при старті (lazy + idle-unload): onnxruntime (92MB)
+    // вантажиться лише при першому library_search, після 5 хв простою вивантажується.
+    // void warmupEmbeddings();
 
     console.log(`[coudycode] Сервер запущено: http://localhost:${this.port}`);
   }

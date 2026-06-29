@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "NODE_OPTIONS=--max-old-space-size=512 vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"
   },

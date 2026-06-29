@@ -72,6 +72,8 @@ export function formatFileOperations(readFiles: string[], modifiedFiles: string[
 }
 
 const TOOL_RESULT_MAX_CHARS = 2000;
+/** Ліміт довжини thinking-блоків у summary-серіалізації (запобігає сплеску RAM/prompt). */
+const THINKING_MAX_CHARS = 2000;
 
 function safeJsonStringify(value: unknown): string {
 	try {
@@ -121,7 +123,7 @@ export function serializeConversation(messages: Message[]): string {
 			}
 
 			if (thinkingParts.length > 0) {
-				parts.push(`[Assistant thinking]: ${thinkingParts.join("\n")}`);
+				parts.push(`[Assistant thinking]: ${truncateForSummary(thinkingParts.join("\n"), THINKING_MAX_CHARS)}`);
 			}
 			if (textParts.length > 0) {
 				parts.push(`[Assistant]: ${textParts.join("\n")}`);
