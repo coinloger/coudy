@@ -127,7 +127,7 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 			{
 				id: "retry",
 				label: "Повторити",
-				icon: "RotateCcw",
+				icon: "retry",
 				show: (m: AgentMessage) => m.role === "user",
 				onClick: (m: AgentMessage) => {
 					if (running) return;

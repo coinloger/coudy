@@ -79,12 +79,7 @@ export function MessageActionsBar({ message, actions }: MessageActionsBarProps):
 				// readonly-текст (напр. час) — текст + опц. іконка годинника, без кліку.
 				if (action.display && !action.onClick) {
 					return (
-						<span
-							key={action.id}
-							className="cc-ui-msg-action cc-ui-msg-action-readonly"
-							title={label}
-						>
-							{Icon ? <Icon size={12} className="cc-ui-msg-action-icon" /> : null}
+						<span key={action.id} className="cc-ui-msg-action cc-ui-msg-action-readonly" title={label}>
 							{label}
 						</span>
 					);
