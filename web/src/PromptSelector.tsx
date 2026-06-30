@@ -48,14 +48,6 @@ export function PromptSelector({ current, templates, onSelect }: PromptSelectorP
 		};
 	}, [open]);
 
-	// Якщо немає жодного шаблону — селектор ховається (нема з чого вибирати).
-	if (templates.length === 0) return null;
-
-	const handlePick = (templateId: string | null): void => {
-		onSelect(templateId);
-		setOpen(false);
-	};
-
 	// Згрупувати шаблони за group (default "standard"), зберігаючи порядок появи.
 	const groups = useMemo<Array<[string, PromptTemplateEntry[]]>>(() => {
 		const map = new Map<string, PromptTemplateEntry[]>();
@@ -66,6 +58,14 @@ export function PromptSelector({ current, templates, onSelect }: PromptSelectorP
 		}
 		return Array.from(map.entries());
 	}, [templates]);
+
+	// Якщо немає жодного шаблону — селектор ховається (нема з чого вибирати).
+	if (templates.length === 0) return null;
+
+	const handlePick = (templateId: string | null): void => {
+		onSelect(templateId);
+		setOpen(false);
+	};
 
 	const groupLabel = (g: string): string => (g === "standard" ? "Стандартні" : g);
 
