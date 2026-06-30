@@ -1,0 +1,15 @@
+{
+  "name": "web-search",
+  "version": "0.1.0",
+  "title": "Web Search",
+  "description": "Вебпошук (DuckDuckGo через ddgr / Tavily) — тулз web_search.",
+  "author": "coudycode",
+  "homepage": "https://github.com/coinloger/coudy",
+  "minCoreVersion": "0.1.0",
+  "permissions": ["tools"],
+  "enabled": true,
+  "entry": {
+    "backend": "./backend/index.js",
+    "frontend": "./frontend/index.tsx"
+  }
+}
