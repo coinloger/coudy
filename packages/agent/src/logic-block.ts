@@ -93,7 +93,7 @@ export function createBlockStartTool(holder: BlockHolder): AgentTool<typeof goal
 			holder.current = { id, goal: goal || "(без опису)", startCallId: toolCallId };
 			return {
 				content: [
-					{ type: "text", text: `Блок відкрито: ${holder.current.goal}\nВиконуй роботу інструментами всередині блоку, потім закрий block_end з ретельним підсумком.` },
+					{ type: "text", text: `Блок відкрито: ${holder.current.goal}\nВиконуй роботу інструментами всередині блоку, потім закрий block_end з ретельним підсумком — після чого відповідай користувачу текстом з цього підсумку.` },
 				],
 				details: { blockId: id, opened: true },
 			};
@@ -122,13 +122,13 @@ export function createBlockEndTool(holder: BlockHolder, writer: BlockWriter): Ag
 					details: { closed: false, reason: "no_open_block" },
 				};
 			}
-			const summary = (params?.summary ?? "").toString().trim();
+			const summary = (params?.summary ?? "").toString().trim() || "(порожній підсумок)";
 			const metadata: BlockMetadata = {
 				blockId: block.id,
 				startCallId: block.startCallId,
 				endCallId: toolCallId,
 				goal: block.goal,
-				summary: summary || "(порожній підсумок)",
+				summary,
 				sources: Array.isArray(params?.sources) ? params.sources!.filter((s) => typeof s === "string") : undefined,
 				filesTouched: Array.isArray(params?.filesTouched)
 					? params.filesTouched!.filter((f) => typeof f === "string")
@@ -137,7 +137,12 @@ export function createBlockEndTool(holder: BlockHolder, writer: BlockWriter): Ag
 			writer.writeBlock(metadata);
 			holder.current = null;
 			return {
-				content: [{ type: "text", text: "Блок закрито. Підсумок збережено." }],
+				content: [
+					{
+						type: "text",
+						text: `Блок закрито. Підсумок: «${summary}».\nТепер дай відповідь користувачу, спираючись ЦІЛКОМ на цей підсумок — текстом, БЕЗ нового блоку (якщо питання не вимагає нової роботи).`,
+					},
+				],
 				details: { closed: true, blockId: block.id },
 			};
 		},
