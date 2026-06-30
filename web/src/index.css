@@ -367,6 +367,30 @@ body {
   gap: 0.5rem;
   margin-top: 1rem;
 }
+/* Поля налаштувань чату (розширювана структура: кожне налаштування = свій блок). */
+.cc-settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--pi-border, rgba(0, 0, 0, 0.08));
+}
+.cc-settings-field:last-child {
+  border-bottom: none;
+}
+.cc-settings-field-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.cc-settings-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.cc-settings-hint {
+  font-size: 0.78rem;
+  opacity: 0.7;
+}
 .cc-add-branches {
   display: flex;
   flex-direction: column;

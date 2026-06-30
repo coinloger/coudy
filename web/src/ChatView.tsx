@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Paperclip, ArrowUp, Square, Gauge, Layers, X } from "lucide-react";
+import { Paperclip, ArrowUp, Square, Gauge, Layers, X, Settings } from "lucide-react";
 import type { AgentMessage } from "@coudycode/agent-core";
+import { ChatSettingsModal } from "./ChatSettingsModal";
 import type { ImageContent, ToolCall as ToolCallContent } from "@coudycode/ai";
 import {
 	ConversationView,
@@ -72,6 +73,7 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 	const [compaction, setCompaction] = useState<CompactionState | null>(null);
 	const [compacting, setCompacting] = useState(false);
 	const [panelsOpen, setPanelsOpen] = useState(true);
+	const [settingsOpen, setSettingsOpen] = useState(false);
 
 	// Вибір моделі (поточна + каталог підключених провайдерів).
 	const [currentModel, setCurrentModel] = useState<CurrentModel | null>(null);
@@ -459,6 +461,14 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 					>
 					<Layers size={13} /> Compact
 						</button>
+					<button
+						type="button"
+						className="btn btn-sm btn-outline-secondary d-flex align-items-center"
+						onClick={() => setSettingsOpen(true)}
+						title="Налаштування чату"
+					>
+						<Settings size={14} />
+					</button>
 					</div>
 				</div>
 
@@ -611,6 +621,7 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 					</div>
 				</div>
 			</div>
+		<ChatSettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 		</div>
 	);
 }
