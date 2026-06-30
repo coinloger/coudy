@@ -60,6 +60,33 @@ export interface CoudyServerOptions {
   pluginsDir: string;
 }
 
+/**
+ * Звірка роуту з params проти pathname. path може мати сегменти ":param"
+ * (матчаться з будь-яким одним сегментом). Повертає витягнуті params або null
+ * (якщо не збіг). Точний збіг (роути без params) працює як підмножина.
+ */
+function matchRoute(routePath: string, pathname: string): Record<string, string> | null {
+  const routeSegs = routePath.split("/").filter((s) => s.length > 0);
+  const pathSegs = pathname.split("/").filter((s) => s.length > 0);
+  if (routeSegs.length !== pathSegs.length) return null;
+  const params: Record<string, string> = {};
+  for (let i = 0; i < routeSegs.length; i++) {
+    const r = routeSegs[i]!;
+    const p = pathSegs[i]!;
+    if (r.startsWith(":")) {
+      // :param → будь-який один сегмент; декодуємо як URL-компонент.
+      try {
+        params[r.slice(1)] = decodeURIComponent(p);
+      } catch {
+        params[r.slice(1)] = p;
+      }
+    } else if (r !== p) {
+      return null;
+    }
+  }
+  return params;
+}
+
 export class CoudyServer {
   private server: Server | null = null;
   private readonly hooks: HookEngine;
@@ -982,13 +1009,21 @@ export class CoudyServer {
       }
     }
 
-    // Плагінні HTTP-роути (server:routes filter). Збіг по method + точний path.
+    // Плагінні HTTP-роути (server:routes filter). Збіг по method + path з params.
     // При disable плагіна його фільтр зникає (ScopedHookEngine) → роут зникає.
     const pluginRoutes = await this.hooks.applyFilters<HttpRoute[]>("server:routes", []);
-    const route = pluginRoutes.find(
-      (r) => r.method === method && r.path === pathname,
-    );
-    if (route) {
+    let matchedRoute: HttpRoute | null = null;
+    let matchedParams: Record<string, string> = {};
+    for (const r of pluginRoutes) {
+      if (r.method !== method) continue;
+      const params = matchRoute(r.path, pathname);
+      if (params) {
+        matchedRoute = r;
+        matchedParams = params;
+        break;
+      }
+    }
+    if (matchedRoute) {
       try {
         const ctx: HttpRouteContext = {
           req,
@@ -997,8 +1032,9 @@ export class CoudyServer {
           sendError: (status: number, message: string): void =>
             this.sendJson(res, status, { error: message }),
           readJsonBody: async (): Promise<unknown> => this.readJsonBody(req),
+          params: matchedParams,
         };
-        await route.handler(ctx);
+        await matchedRoute.handler(ctx);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (!res.headersSent) {

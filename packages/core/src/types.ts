@@ -164,15 +164,23 @@ export interface HttpRouteContext {
   sendError: (status: number, message: string) => void;
   /** Прочитати та розпарсити JSON-тіло запиту (null якщо порожнє/невалідне). */
   readJsonBody: () => Promise<unknown>;
+  /** Витягнуті path-params з роуту (":param" сегменти). Порожній обʼєкт для роутів без params. */
+  params: Record<string, string>;
 }
 
 /** Обробник плагінного HTTP-роуту. */
 export type HttpRouteHandler = (ctx: HttpRouteContext) => void | Promise<void>;
 
-/** Опис плагінного HTTP-ендпоінту (точний збіг method + path). */
+/** Опис плагінного HTTP-ендпоінту (method + path-збіг). */
 export interface HttpRoute {
   method: HttpMethod;
-  /** Точний шлях, напр. "/api/example-plugin/data". */
+  /**
+   * Шлях роуту, напр. "/api/example-plugin/data". Підтримує path-params через
+   * префікс ":" — сегмент ":param" матчиться з будь-яким одним сегментом URL
+   * і витягується в ctx.params. Напр. "/api/library/:name" збігається з
+   * "/api/library/foo" → ctx.params = { name: "foo" }. Точний збіг без params
+   * працює як і раніше.
+   */
   path: string;
   handler: HttpRouteHandler;
 }
