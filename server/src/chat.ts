@@ -276,7 +276,7 @@ async function createHarness(
 	// Системний промпт: content шаблону ?? built-in (з поточним набором тулзів).
 	const basePrompt = template
 		? template.content
-		: buildSystemPrompt({ cwd, tools: tools.map((t) => t.name) });
+		: buildSystemPrompt({ cwd, tools: tools.map((t) => t.name), logicBlocks: true });
 	// Додати дисципліну logic-block поверх промпту (повз блок тулзи недоступні).
 	const systemPrompt = await hooks.applyFilters<string>("prompt:system", basePrompt + LOGIC_BLOCK_PROMPT_SECTION);
 	return new AgentHarness({

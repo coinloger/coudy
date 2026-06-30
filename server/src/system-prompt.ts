@@ -14,6 +14,12 @@ export interface BuildSystemPromptOptions {
 	tools?: string[];
 	/** Робоча директорія. */
 	cwd: string;
+	/**
+	 * Чи активна механіка logic-block (тулзи доступні лише всередині блоку).
+	 * true → промпт block-aware (без інструкцій про прямі тулзи; секція tools як довідник).
+	 * false/undefined → пряма поведінка (тулзи викликаються напряму).
+	 */
+	logicBlocks?: boolean;
 }
 
 /** Короткі описи тулзів coudycode (для секції Available tools). */
@@ -44,6 +50,7 @@ const CORE_GUIDELINES: string[] = [
 export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	const tools = options.tools ?? ["read", "bash", "edit", "write", "grep", "find", "ls", "fetch"];
 	const cwd = options.cwd.replace(/\\/g, "/");
+	const logicBlocks = options.logicBlocks === true;
 
 	const now = new Date();
 	const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -55,7 +62,17 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	const guidelines = CORE_GUIDELINES.map((g) => `- ${g}`).join("\n");
 
-	return `You are an expert coding assistant working in the user's current project.
+	// Вступ + high-leverage інженер: block-aware (без інструкцій про прямі тулзи) або прямий.
+	const intro = logicBlocks
+		? `You are an expert coding assistant working in the user's current project.
+
+Your goal is to complete tasks QUICKLY and CORRECTLY. Be a high-leverage engineer:
+- Act on the task IMMEDIATELY — do not narrate plans or list steps before doing them.
+- Do NOT over-explore "to understand the codebase" — gather only what the task needs.
+- Assume reasonable defaults instead of asking for clarification. Only ask when genuinely blocked.
+- Do NOT recap what you just did. The diff/result speaks for itself.
+- Code must be clean, maintainable, and bug-free.`
+		: `You are an expert coding assistant working in the user's current project.
 
 Your goal is to complete tasks QUICKLY and CORRECTLY. Be a high-leverage engineer:
 - Act on the task IMMEDIATELY — do not narrate plans or list steps before doing them.
@@ -63,12 +80,22 @@ Your goal is to complete tasks QUICKLY and CORRECTLY. Be a high-leverage enginee
 - One focused tool call beats three exploratory ones. If you know which file to edit, edit it.
 - Assume reasonable defaults instead of asking for clarification. Only ask when genuinely blocked.
 - Do NOT recap what you just did. The diff/result speaks for itself.
-- Code must be clean, maintainable, and bug-free.
+- Code must be clean, maintainable, and bug-free.`;
 
-Available tools:
+	// Секція тулзів: block-aware — довідник toolbox'у (доступ через блок) або прямий доступ.
+	const toolsSection = logicBlocks
+		? `Toolbox (довідник — ці інструменти доступні ЛИШЕ всередині logic-блоку через block_start):
 ${toolsList}
 
-In addition to the tools above, you may have access to other custom tools depending on the project.
+Додатково можуть бути доступні інші кастомні інструменти (також лише через блок).`
+		: `Available tools:
+${toolsList}
+
+In addition to the tools above, you may have access to other custom tools depending on the project.`;
+
+	return `${intro}
+
+${toolsSection}
 
 Guidelines:
 ${guidelines}
