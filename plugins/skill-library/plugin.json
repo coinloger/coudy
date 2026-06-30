@@ -1,0 +1,12 @@
+{
+  "name": "skill-library",
+  "version": "0.1.0",
+  "title": "Skill Library",
+  "description": "Бібліотека функцій (skill-library): search/call/create/modify + сесійні скрипти.",
+  "minCoreVersion": "0.1.0",
+  "permissions": ["tools", "routes", "system-prompt"],
+  "enabled": true,
+  "entry": {
+    "backend": "./backend/index.js"
+  }
+}

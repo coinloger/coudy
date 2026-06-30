@@ -37,23 +37,6 @@ import { PluginSessionRegistryImpl, PluginSessionStore } from "./plugin-sessions
 import { handleChat, handleCompact, getGlobalTools } from "./chat.js";
 import { ChatSettingsStore, type ChatSettings } from "./chat-settings.js";
 import { processRegistry } from "./processes.js";
-import {
-	handleLibraryList,
-	handleLibraryGet,
-	handleLibrarySearch,
-	handleLibraryCreate,
-	handleLibraryUpdate,
-	handleLibraryDelete,
-	handleLibraryRun,
-	handleSessionScriptList,
-	handleSessionScriptGet,
-	handleSessionScriptCreate,
-	handleSessionScriptUpdate,
-	handleSessionScriptDelete,
-	handleSessionScriptRun,
-	handleSessionScriptPromote,
-	warmupEmbeddings,
-} from "./library.js";
 
 export interface CoudyServerOptions {
   port?: number;
@@ -146,6 +129,8 @@ export class CoudyServer {
     this.hooks = new HookEngine();
     this.pluginsDir = opts.pluginsDir;
     this.port = opts.port ?? 3001;
+    // Експортувати processRegistry для плагінів (skill-library читає його для ctx.proc).
+    (globalThis as { __coudyProcessRegistry?: unknown }).__coudyProcessRegistry = processRegistry;
     this.sessions = new SessionManager({
       resolveConnectedModel: (provider, modelId) => this.resolveConnectedModel(provider, modelId),
       listConnectedModels: () => this.listConnectedModels(),
@@ -194,10 +179,6 @@ export class CoudyServer {
 
     // --- Hook-точка: server:start (action) ---
     await this.hooks.doAction("server:start", this.port);
-
-    // Embeddings-модель НЕ розігріваємо при старті (lazy + idle-unload): onnxruntime (92MB)
-    // вантажиться лише при першому library_search, після 5 хв простою вивантажується.
-    // void warmupEmbeddings();
 
     console.log(`[coudycode] Сервер запущено: http://localhost:${this.port}`);
   }
@@ -740,52 +721,6 @@ export class CoudyServer {
       return;
     }
 
-    // === Бібліотека функцій (skill library) ===
-
-    // POST /api/library/search body {query} — семантичний пошук.
-    if (method === "POST" && pathname === "/api/library/search") {
-      await handleLibrarySearch(req, res);
-      return;
-    }
-
-    // POST /api/library — create нової функції.
-    if (method === "POST" && pathname === "/api/library") {
-      await handleLibraryCreate(req, res);
-      return;
-    }
-
-    // GET /api/library — список усіх функцій.
-    if (method === "GET" && pathname === "/api/library") {
-      handleLibraryList(req, res);
-      return;
-    }
-
-    // /api/library/:name — GET (одна з кодом) / PATCH (modify) / DELETE.
-    const libraryItemMatch = /^\/api\/library\/([^/]+)$/.exec(pathname);
-    if (libraryItemMatch) {
-      const name = decodeURIComponent(libraryItemMatch[1]);
-      if (method === "GET") {
-        handleLibraryGet(req, res, name);
-        return;
-      }
-      if (method === "PATCH") {
-        await handleLibraryUpdate(req, res, name);
-        return;
-      }
-      if (method === "DELETE") {
-        handleLibraryDelete(req, res, name);
-        return;
-      }
-    }
-
-    // POST /api/library/:name/run body {params} — виконати функцію (тестування).
-    const libraryRunMatch = /^\/api\/library\/([^/]+)\/run$/.exec(pathname);
-    if (method === "POST" && libraryRunMatch) {
-      const name = decodeURIComponent(libraryRunMatch[1]);
-      await handleLibraryRun(req, res, name);
-      return;
-    }
-
     // GET /api/sessions — список усіх сесій (метадані, без messages).
     if (method === "GET" && pathname === "/api/sessions") {
       this.sendJson(res, 200, { sessions: await this.sessions.list() });
@@ -955,58 +890,6 @@ export class CoudyServer {
       this.sessionPromptBindings.remove(id);
       this.sendJson(res, 200, { ok: true });
       return;
-    }
-
-    // === Сесійні скрипти (session-scoped skill library) ===
-
-    // POST /api/sessions/:id/scripts — create сесійного скрипта.
-    const sessionScriptBaseMatch = /^\/api\/sessions\/([^/]+)\/scripts$/.exec(pathname);
-    if (method === "POST" && sessionScriptBaseMatch) {
-      const sid = decodeURIComponent(sessionScriptBaseMatch[1]);
-      await handleSessionScriptCreate(req, res, sid);
-      return;
-    }
-    // GET /api/sessions/:id/scripts — список сесійних скриптів.
-    if (method === "GET" && sessionScriptBaseMatch) {
-      const sid = decodeURIComponent(sessionScriptBaseMatch[1]);
-      handleSessionScriptList(req, res, sid);
-      return;
-    }
-
-    // POST /api/sessions/:id/scripts/:name/run body {params} — виконати.
-    const sessionScriptRunMatch = /^\/api\/sessions\/([^/]+)\/scripts\/([^/]+)\/run$/.exec(pathname);
-    if (method === "POST" && sessionScriptRunMatch) {
-      const sid = decodeURIComponent(sessionScriptRunMatch[1]);
-      const sname = decodeURIComponent(sessionScriptRunMatch[2]);
-      await handleSessionScriptRun(req, res, sid, sname);
-      return;
-    }
-    // POST /api/sessions/:id/scripts/:name/promote — копіювати в глобал.
-    const sessionScriptPromoteMatch = /^\/api\/sessions\/([^/]+)\/scripts\/([^/]+)\/promote$/.exec(pathname);
-    if (method === "POST" && sessionScriptPromoteMatch) {
-      const sid = decodeURIComponent(sessionScriptPromoteMatch[1]);
-      const sname = decodeURIComponent(sessionScriptPromoteMatch[2]);
-      await handleSessionScriptPromote(req, res, sid, sname);
-      return;
-    }
-
-    // /api/sessions/:id/scripts/:name — GET (з кодом) / PATCH / DELETE.
-    const sessionScriptItemMatch = /^\/api\/sessions\/([^/]+)\/scripts\/([^/]+)$/.exec(pathname);
-    if (sessionScriptItemMatch) {
-      const sid = decodeURIComponent(sessionScriptItemMatch[1]);
-      const sname = decodeURIComponent(sessionScriptItemMatch[2]);
-      if (method === "GET") {
-        handleSessionScriptGet(req, res, sid, sname);
-        return;
-      }
-      if (method === "PATCH") {
-        await handleSessionScriptUpdate(req, res, sid, sname);
-        return;
-      }
-      if (method === "DELETE") {
-        handleSessionScriptDelete(req, res, sid, sname);
-        return;
-      }
     }
 
     // Плагінні HTTP-роути (server:routes filter). Збіг по method + path з params.

@@ -5,7 +5,7 @@
  */
 
 export { LibraryStore, SessionScriptStore, type LibraryStoreOptions } from "./store.ts";
-export { embed, cosine } from "./embeddings.ts";
+export { embed, cosine, unloadEmbeddings } from "./embeddings.ts";
 export type {
 	FunctionMeta,
 	FunctionModule,

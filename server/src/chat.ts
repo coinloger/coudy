@@ -29,7 +29,6 @@ import {
 } from "./plugin-sessions.js";
 import type { PluginSessionOwnership } from "@coudycode/core";
 import { processRegistry } from "./processes.js";
-import { createLibraryTools, resetLibraryTurn } from "./library.js";
 import { ChatSettingsStore } from "./chat-settings.js";
 
 /** Конфіг моделі для запуску агента. */
@@ -160,8 +159,8 @@ export interface ToolInfo {
  */
 export async function getGlobalTools(cwd: string, hooks: HookEngine): Promise<ToolInfo[]> {
 	// Базові тулзи + processes-тулз; плагіни додають свої через filter «tools:register».
-	const base = [...createAllTools(cwd), createProcessesTool(), ...createLibraryTools("__global__", cwd)];
-	const tools = await hooks.applyFilters<AgentTool[]>("tools:register", base);
+	const base = [...createAllTools(cwd), createProcessesTool()];
+	const tools = await hooks.applyFilters<AgentTool[]>("tools:register", base, { sessionId: "__global__", cwd });
 	return tools.map((t) => ({ name: t.name, description: t.description }));
 }
 
@@ -227,7 +226,6 @@ function createTrackedTools(cwd: string, sessionId: string): AgentTool[] {
 			},
 		}),
 		createProcessesTool(),
-		...createLibraryTools(sessionId, cwd),
 	];
 }
 
@@ -242,7 +240,7 @@ async function createHarness(
 ): Promise<AgentHarness> {
 	const env = new NodeExecutionEnv({ cwd });
 	// Базові інструменти (з реєстром процесів) + processes-тулз + плагін-тулзи.
-	let tools = await hooks.applyFilters<AgentTool[]>("tools:register", createTrackedTools(cwd, sessionId));
+	let tools = await hooks.applyFilters<AgentTool[]>("tools:register", createTrackedTools(cwd, sessionId), { sessionId, cwd });
 	// Фільтр за toolset-ом шаблону ПІСЛЯ applyFilters → контролює всі тулзи (вкл. плагін):
 	// null = усі; [] = без; [...] = лише ці (базові + плагін з цього списку).
 	if (template && template.tools !== null) {
@@ -460,9 +458,8 @@ export async function handleChat(
 
 	let promptError: unknown = null;
 	try {
-		// Скинути search-flow бібліотеки на початку нового ходу (create вимагає новий search).
-		resetLibraryTurn(sessionId);
 		// Action: плагіни можуть підготуватись ДО виклику LLM (payload: session/message/model).
+		// (skill-library скидає search-flow у своєму tools:register фільтрі.)
 		await hooks.doAction("agent:before-prompt", opened.session, message, resolved.model);
 		await harness.prompt(message, images.length ? { images } : undefined);
 	} catch (err) {
