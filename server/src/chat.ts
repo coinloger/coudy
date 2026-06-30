@@ -38,6 +38,24 @@ interface ResolvedModel {
 }
 
 /**
+ * Секція системного промпту: дисципліна logic-block (Крок A).
+ * Агент-оркестратор без прямих тулзів — робота лише через пари block_start/block_end.
+ */
+const LOGIC_BLOCK_PROMPT_SECTION = [
+	"",
+	"## Як ти працюєш (logic-block)",
+	"Ти не маєш прямих інструментів на верхньому рівні. Щоб виконати будь-яку роботу:",
+	"1. Відкрий block_start(goal) — опиши задачу блоку.",
+	"2. Всередині блоку виконай потрібну роботу інструментами (read/bash/grep/…).",
+	"3. Закрий block_end зі ретельним підсумком.",
+	"Вкладеність заборонена: вже всередині блоку block_start недоступний.",
+	"У майбутніх ходах у контексті лишається ТІЛЬКИ твій підсумок блоку (сирий I/O викидатиметься) — тому пиши підсумок як покажчик: що зроблено, які файли, ключові знахідки, джерела (URL для web), прийняті рішення.",
+	"- Для файлових тулзів — короткий покажчик (файл перечитається знову).",
+	"- Для web-пошуку — знахідки + URL.",
+	"Для ПРОСТИХ відповідей без інструментів — відповідай текстом напряму, блок не відкривай.",
+].join("\n");
+
+/**
  * Резолвити модель + auth-ключ.
  * Пресет (built-in) → authStorage.getApiKey; кастомний (models.json) → apiKey + baseUrl.
  */
@@ -259,7 +277,8 @@ async function createHarness(
 	const basePrompt = template
 		? template.content
 		: buildSystemPrompt({ cwd, tools: tools.map((t) => t.name) });
-	const systemPrompt = await hooks.applyFilters<string>("prompt:system", basePrompt);
+	// Додати дисципліну logic-block поверх промпту (повз блок тулзи недоступні).
+	const systemPrompt = await hooks.applyFilters<string>("prompt:system", basePrompt + LOGIC_BLOCK_PROMPT_SECTION);
 	return new AgentHarness({
 		env,
 		session,
@@ -267,6 +286,7 @@ async function createHarness(
 		tools: tools as never,
 		systemPrompt,
 		thinkingLevel: "off",
+		logicBlocks: true,
 		getApiKeyAndHeaders: async () => ({ apiKey: resolved.apiKey }),
 	});
 }

@@ -6,6 +6,14 @@ import {
 	type UserMessage,
 } from "@coudycode/ai";
 import { runAgentLoop } from "../agent-loop.ts";
+import {
+	BLOCK_CUSTOM_TYPE,
+	createBlockEndTool,
+	createBlockHolder,
+	createBlockStartTool,
+	type BlockHolder,
+	type BlockMetadata,
+} from "../logic-block.ts";
 import type {
 	AgentContext,
 	AgentEvent,
@@ -190,6 +198,10 @@ export class AgentHarness<
 	private resources: AgentHarnessResources<TSkill, TPromptTemplate>;
 	private tools = new Map<string, TTool>();
 	private activeToolNames: string[];
+	/** Чи увімкнено механіку logic-block. */
+	private readonly logicBlocks: boolean;
+	/** Згортка стану відкритого блоку (для tool-gating; скидається на початку кожного ходу). */
+	private blockHolder: BlockHolder = createBlockHolder();
 	private steerQueue: UserMessage[] = [];
 	private steeringQueueMode: QueueMode;
 	private followUpQueue: UserMessage[] = [];
@@ -218,6 +230,16 @@ export class AgentHarness<
 			: (options.tools ?? []).map((tool) => tool.name);
 		this.validateUniqueNames(this.activeToolNames, "Duplicate active tool name(s)");
 		this.validateToolNames(this.activeToolNames);
+		// Logic block (Крок A): зареєструвати маркер-тулзи + додати block_start в активні.
+		this.logicBlocks = options.logicBlocks ?? false;
+		if (this.logicBlocks) {
+			const startTool = createBlockStartTool(this.blockHolder) as unknown as TTool;
+			const endTool = createBlockEndTool(this.blockHolder, { writeBlock: (m) => this.writeBlockMetadata(m) }) as unknown as TTool;
+			if (!this.tools.has(startTool.name)) this.tools.set(startTool.name, startTool);
+			if (!this.tools.has(endTool.name)) this.tools.set(endTool.name, endTool);
+			if (!this.activeToolNames.includes(startTool.name)) this.activeToolNames.push(startTool.name);
+			if (!this.activeToolNames.includes(endTool.name)) this.activeToolNames.push(endTool.name);
+		}
 		this.steeringQueueMode = options.steeringMode ?? "one-at-a-time";
 		this.followUpQueueMode = options.followUpMode ?? "one-at-a-time";
 	}
@@ -362,6 +384,22 @@ export class AgentHarness<
 		};
 	}
 
+	/**
+	 * Список тулзів, що пропонуються моделі, з урахуванням стану блоку (logic-block gating).
+	 * - блок закритий → лише block_start.
+	 * - блок відкритий → повний тулсет + block_end, без block_start (заборонена вкладеність).
+	 * Якщо logicBlocks вимкнено → повний activeTools як є.
+	 */
+	private getOfferedTools(turnState: AgentHarnessTurnState<TSkill, TPromptTemplate, TTool>): TTool[] {
+		const active = turnState.activeTools.slice();
+		if (!this.logicBlocks) return active;
+		const blockOpen = this.blockHolder.current !== null;
+		// Блок закритий → лише block_start; відкритий → повний тулсет (без block_start) + block_end.
+		return blockOpen
+			? active.filter((t) => t.name !== "block_start")
+			: active.filter((t) => t.name === "block_start");
+	}
+
 	private createContext(
 		turnState: AgentHarnessTurnState<TSkill, TPromptTemplate, TTool>,
 		systemPrompt?: string,
@@ -369,8 +407,27 @@ export class AgentHarness<
 		return {
 			systemPrompt: systemPrompt ?? turnState.systemPrompt,
 			messages: turnState.messages.slice(),
-			tools: turnState.activeTools.slice(),
+			tools: this.getOfferedTools(turnState),
 		};
+	}
+
+	/** Записати метадані блоку в сесію (через чергу pending writes). */
+	private writeBlockMetadata(metadata: BlockMetadata): void {
+		this.pendingSessionWrites.push({ type: "custom", customType: BLOCK_CUSTOM_TYPE, data: metadata });
+	}
+
+	/** Auto-close: якщо хід завершився з відкритим блоком — записати підсумок best-effort. */
+	private autoCloseBlock(): void {
+		const block = this.blockHolder.current;
+		if (!block) return;
+		this.writeBlockMetadata({
+			blockId: block.id,
+			startCallId: block.startCallId,
+			endCallId: "auto-close",
+			goal: block.goal,
+			summary: "Блок не закрито моделлю (auto-close).",
+		});
+		this.blockHolder.current = null;
 	}
 
 	private createStreamFn(getTurnState: () => AgentHarnessTurnState<TSkill, TPromptTemplate, TTool>): StreamFn {
@@ -555,6 +612,8 @@ export class AgentHarness<
 		text: string,
 		options?: { images?: ImageContent[] },
 	): Promise<AssistantMessage> {
+		// Кожен хід починається з закритого блоку (стан не переноситься між ходами).
+		this.blockHolder.current = null;
 		let activeTurnState = turnState;
 		let messages: AgentMessage[] = [createUserMessage(text, options?.images)];
 		if (this.nextTurnQueue.length > 0) {
@@ -619,6 +678,8 @@ export class AgentHarness<
 			}
 			throw new AgentHarnessError("invalid_state", "AgentHarness prompt completed without an assistant message");
 		} finally {
+			// Auto-close: хід завершено — якщо блок лишився відкритим, закрити best-effort.
+			this.autoCloseBlock();
 			try {
 				await this.flushPendingSessionWrites();
 			} finally {

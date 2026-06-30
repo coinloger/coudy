@@ -828,6 +828,11 @@ export interface AgentHarnessOptions<
 	activeToolNames?: string[];
 	steeringMode?: QueueMode;
 	followUpMode?: QueueMode;
+	/**
+	 * Увімкнути механіку logic-block: модель змушена працювати через пари
+	 * block_start/block_end (повз них тулзи недоступні). Дефолт: false.
+	 */
+	logicBlocks?: boolean;
 }
 
 export type { AgentHarness } from "./agent-harness.ts";
