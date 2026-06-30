@@ -3,8 +3,9 @@ import { Paperclip, ArrowUp, Square, Gauge, X, Settings } from "lucide-react";
 import type { AgentMessage } from "@coudycode/agent-core";
 import { useNavigate } from "react-router-dom";
 import { ChatSettingsModal } from "./ChatSettingsModal";
-import { findSlashCommand } from "./slash-commands";
+import { findSlashCommand, BUILTIN_SLASH_COMMANDS } from "./slash-commands";
 import { toastStore } from "./Toast";
+import { SlashCommandMenu, filterSlashCommands } from "./SlashCommandMenu";
 import type { ImageContent, ToolCall as ToolCallContent } from "@coudycode/ai";
 import {
 	ConversationView,
@@ -78,6 +79,8 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 	const [compacting, setCompacting] = useState(false);
 	const [panelsOpen, setPanelsOpen] = useState(true);
 	const [settingsOpen, setSettingsOpen] = useState(false);
+	// Активний елемент меню slash-команд (індекс).
+	const [slashActive, setSlashActive] = useState(0);
 
 	// Вибір моделі (поточна + каталог підключених провайдерів).
 	const [currentModel, setCurrentModel] = useState<CurrentModel | null>(null);
@@ -94,6 +97,21 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 	const messages: AgentMessage[] = [...committed, ...live.messages];
 	const toolStatus: Record<string, ToolCallStatus> = { ...committedStatus, ...live.toolStatus };
 	const error = runError;
+
+	// Меню slash-команд: префікс + відфільтрований список (для навігації ↑↓).
+	// Пробіл перевіряємо в СИРОМУ input (не обрізаному) — щоб "/compact " не лишався відкритим.
+	const slashPrefix = useMemo(
+		() => (input.trim().startsWith("/") && !input.includes(" ") ? input.trim().slice(1) : null),
+		[input],
+	);
+	const slashFiltered = useMemo(
+		() => (slashPrefix === null ? [] : filterSlashCommands(slashPrefix, BUILTIN_SLASH_COMMANDS)),
+		[slashPrefix],
+	);
+	// Скидати активний індекс, коли список зменшився (напр. /co → /cop).
+	useEffect(() => {
+		if (slashActive >= slashFiltered.length) setSlashActive(0);
+	}, [slashFiltered.length, slashActive]);
 
 	// Accumulated ↓input/↑output-токени по assistant-повідомленнях поточного ходу.
 	const usage = sumUsage(live.messages, live.streamingMessage);
@@ -433,10 +451,48 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 	};
 
 	/** Enter = відправити, Shift+Enter = новий рядок. */
+	/** Вставити обрану slash-команду у textarea: `/name ` + фокус. */
+	const selectSlash = (name: string): void => {
+		setInput(`/${name} `);
+		setSlashActive(0);
+		requestAnimationFrame(() => textareaRef.current?.focus());
+	};
+
 	const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+		// Меню slash-команд відкрите — стрілки/Enter/Esc керує ним (не відправляти форму).
+		if (slashPrefix !== null && slashFiltered.length > 0) {
+			if (e.key === "ArrowDown") {
+				e.preventDefault();
+				setSlashActive((i) => Math.min(i + 1, slashFiltered.length - 1));
+				return;
+			}
+			if (e.key === "ArrowUp") {
+				e.preventDefault();
+				setSlashActive((i) => Math.max(i - 1, 0));
+				return;
+			}
+			if (e.key === "Enter" && !e.shiftKey) {
+				e.preventDefault();
+				const cmd = slashFiltered[slashActive];
+				if (cmd) selectSlash(cmd.name);
+				return;
+			}
+			if (e.key === "Escape") {
+				e.preventDefault();
+				setInput("");
+				setSlashActive(0);
+				return;
+			}
+			if (e.key === "Tab") {
+				e.preventDefault();
+				const cmd = slashFiltered[slashActive];
+				if (cmd) selectSlash(cmd.name);
+				return;
+			}
+		}
 		if (e.key === "Enter" && !e.shiftKey) {
 			e.preventDefault();
-		handleSubmit();
+			handleSubmit();
 		}
 	};
 
@@ -589,6 +645,12 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 
 			<div className="cc-composer">
 				<div className="cc-composer-inner">
+					<SlashCommandMenu
+						input={input}
+						commands={BUILTIN_SLASH_COMMANDS}
+						active={slashActive}
+						onSelect={selectSlash}
+					/>
 					<ProcessBar />
 					<div className="cc-input-card">
 						{images.length > 0 && (
