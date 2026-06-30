@@ -118,6 +118,45 @@ export function describeToolCall(call: ToolCall): string {
 		}
 		case "compact":
 			return "Compacting context";
+		// ===== Бібліотека / сесійні скрипти =====
+		case "library_search": {
+			const q = strArg(a.query);
+			return q ? `Searching library for "${truncate(q, 40)}"` : "Searching library";
+		}
+		case "library_call":
+		case "session_script_call": {
+			const fn = strArg(a.name);
+			const scope = call.name.startsWith("session") ? "session script" : "library fn";
+			return fn ? `Calling ${scope} ${fn}` : `Calling ${scope}`;
+		}
+		case "library_create": {
+			const fn = strArg(a.name);
+			return fn ? `Creating library fn ${fn}` : "Creating library fn";
+		}
+		case "library_modify": {
+			const fn = strArg(a.name);
+			return fn ? `Modifying library fn ${fn}` : "Modifying library fn";
+		}
+		case "library_list":
+			return "Listing library";
+		case "session_script_create": {
+			const fn = strArg(a.name);
+			return fn ? `Creating session script ${fn}` : "Creating session script";
+		}
+		case "session_script_modify": {
+			const fn = strArg(a.name);
+			return fn ? `Modifying session script ${fn}` : "Modifying session script";
+		}
+		case "session_script_list":
+			return "Listing session scripts";
+		case "promote_to_global": {
+			const fn = strArg(a.name);
+			return fn ? `Promoting ${fn} to global` : "Promoting to global";
+		}
+		case "processes": {
+			const action = strArg(a.action);
+			return action === "kill" ? "Killing process" : "Managing processes";
+		}
 		default:
 			return call.name;
 	}
@@ -165,6 +204,43 @@ export function toolCallPreview(call: ToolCall): string {
 		case "compact": {
 			const tokens = numArg(a.tokensBefore);
 			return tokens !== undefined ? `Compacted ${tokens} tokens` : "compact context";
+		}
+		// ===== Бібліотека / сесійні скрипти: peek = ДЕТАЛІ (не дія) =====
+		case "library_search": {
+			const q = strArg(a.query);
+			return q ? `query: ${truncate(q, 60)}` : call.name;
+		}
+		case "library_list":
+		case "session_script_list":
+			return call.name;
+		case "library_call":
+		case "session_script_call": {
+			const fn = strArg(a.name);
+			const p = a.params && typeof a.params === "object" ? JSON.stringify(a.params) : "";
+			return p ? `${fn ?? call.name}(${truncate(p, 60)})` : (fn ?? call.name);
+		}
+		case "library_create":
+		case "library_modify":
+		case "session_script_create":
+		case "session_script_modify": {
+			const fn = strArg(a.name);
+			// peek показує мету з title/description якщо є в code-meta, інакше fn-імʼя.
+			const code = strArg(a.code);
+			if (code) {
+				const m = code.match(/title:\s*"([^"]+)"/);
+				if (m) return m[1] ?? (fn ?? call.name);
+			}
+			return fn ?? call.name;
+		}
+		case "promote_to_global": {
+			const fn = strArg(a.name);
+			const cat = strArg(a.category);
+			return cat ? `${fn ?? call.name} → ${cat}` : (fn ?? call.name);
+		}
+		case "processes": {
+			const action = strArg(a.action);
+			const pid = numArg(a.pid);
+			return pid !== undefined ? `${action ?? "list"} pid=${pid}` : (action ?? "list");
 		}
 		default:
 			return call.name;
@@ -216,4 +292,9 @@ function numArg(v: unknown): number | undefined {
 	if (typeof v === "number" && Number.isFinite(v)) return v;
 	if (typeof v === "string" && /^\d+$/.test(v.trim())) return Number(v);
 	return undefined;
+}
+
+/** Обрізати рядок до max символів з ellipsis. */
+function truncate(s: string, max: number): string {
+	return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }

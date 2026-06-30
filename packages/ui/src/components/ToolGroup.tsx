@@ -89,7 +89,7 @@ export function ToolGroup({ entries }: ToolGroupProps): React.ReactNode {
 					{open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
 				</button>
 			</div>
-			{!open && lastPreview && (
+			{!open && lastPreview && lastPreview.trim() !== summary.trim() && (
 				<div className="cc-ui-tc-peek" title={lastPreview}>
 					<CornerDownRight size={13} className="cc-ui-tc-peek-mark" />
 					<span className="cc-ui-tc-peek-text">{lastPreview}</span>
