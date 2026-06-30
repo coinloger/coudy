@@ -30,6 +30,8 @@ export interface AssistantMessageProps {
 	/** Які contentIndex зараз стрімляться (для курсора). */
 	streamingTextIndex?: number;
 	streamingThinkingIndex?: number;
+	/** Чи показувати завершені thinking-блоки. */
+	showCompleted?: boolean;
 	/** Дії на повідомленнях (від плагінів ui:message-actions). */
 	actions?: MessageAction[];
 }
@@ -71,6 +73,7 @@ export function AssistantMessage({
 	toolStatus,
 	streamingTextIndex,
 	streamingThinkingIndex,
+	showCompleted,
 	actions,
 }: AssistantMessageProps): React.ReactNode {
 	const isError = message.stopReason === "error" && !!message.errorMessage;
@@ -122,7 +125,7 @@ export function AssistantMessage({
 				if (seg.kind === "thinking") {
 					const block = message.content[seg.index];
 					if (block.type !== "thinking") return null;
-					return <ThinkingBlock key={sIdx} content={block} streaming={streamingThinkingIndex === seg.index} />;
+					return <ThinkingBlock key={sIdx} content={block} streaming={streamingThinkingIndex === seg.index} showCompleted={showCompleted} />;
 				}
 				// tools-сегмент: 1 → ToolCall, >1 → ToolGroup.
 				const calls = seg.indices.map((i) => message.content[i]);

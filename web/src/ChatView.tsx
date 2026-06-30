@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Paperclip, ArrowUp, Square, Gauge, X, Settings } from "lucide-react";
+import { Paperclip, ArrowUp, Square, Gauge, X, Settings, BrainCircuit } from "lucide-react";
 import type { AgentMessage } from "@coudycode/agent-core";
 import { useNavigate } from "react-router-dom";
 import { ChatSettingsModal } from "./ChatSettingsModal";
@@ -79,6 +79,13 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 	const [compacting, setCompacting] = useState(false);
 	const [panelsOpen, setPanelsOpen] = useState(true);
 	const [settingsOpen, setSettingsOpen] = useState(false);
+	// Показ завершених thinking-блоків (за замовчуванням приховано). Persist у localStorage.
+	const [showReasoning, setShowReasoning] = useState<boolean>(
+		() => localStorage.getItem("cc-show-reasoning") === "1",
+	);
+	useEffect(() => {
+		localStorage.setItem("cc-show-reasoning", showReasoning ? "1" : "0");
+	}, [showReasoning]);
 	// Активний елемент меню slash-команд (індекс).
 	const [slashActive, setSlashActive] = useState(0);
 
@@ -553,6 +560,14 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 					/>
 					<button
 						type="button"
+						className={`btn btn-sm d-flex align-items-center ${showReasoning ? "btn-primary" : "btn-outline-secondary"}`}
+						onClick={() => setShowReasoning((v) => !v)}
+						title="Показати reasoning"
+					>
+						<BrainCircuit size={14} />
+					</button>
+					<button
+						type="button"
 						className="btn btn-sm btn-outline-secondary d-flex align-items-center"
 						onClick={() => setSettingsOpen(true)}
 						title="Налаштування чату"
@@ -603,6 +618,7 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 							streamingMessage={live.streamingMessage}
 							streamingTextIndex={live.streamingTextIndex}
 							streamingThinkingIndex={live.streamingThinkingIndex}
+							showCompleted={showReasoning}
 							messageActions={combinedActions}
 						/>
 					)}

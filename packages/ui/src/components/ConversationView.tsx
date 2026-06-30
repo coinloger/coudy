@@ -17,6 +17,8 @@ export interface ConversationViewProps {
 	/** contentIndex тексту, що стрімиться (у streamingMessage). */
 	streamingTextIndex?: number;
 	streamingThinkingIndex?: number;
+	/** Чи показувати завершені thinking-блоки. */
+	showCompleted?: boolean;
 	/** Дії на повідомленнях (від плагінів ui:message-actions). */
 	messageActions?: MessageAction[];
 }
@@ -32,6 +34,7 @@ export function ConversationView({
 	streamingMessage,
 	streamingTextIndex,
 	streamingThinkingIndex,
+	showCompleted,
 	messageActions,
 }: ConversationViewProps): React.ReactNode {
 	const all = streamingMessage ? [...messages, streamingMessage] : messages;
@@ -70,6 +73,7 @@ export function ConversationView({
 							toolStatus={toolStatus}
 							streamingTextIndex={isStreaming ? streamingTextIndex : undefined}
 							streamingThinkingIndex={isStreaming ? streamingThinkingIndex : undefined}
+							showCompleted={showCompleted}
 							// Під час стрімінгу дії приховані — доки агент не завершить відповідь.
 							actions={isStreaming ? [] : messageActions}
 						/>

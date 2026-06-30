@@ -6,6 +6,8 @@ export interface ThinkingBlockProps {
 	content: ThinkingContent;
 	/** Чи триває стрімінг thinking (показуємо 3 крапки). */
 	streaming?: boolean;
+	/** Чи показувати завершені thinking-блоки (за замовчуванням приховано). */
+	showCompleted?: boolean;
 }
 
 /**
@@ -13,8 +15,11 @@ export interface ThinkingBlockProps {
  * Текст НЕ показується інлайн. Клік → overlay (absolute, z-index) з повним текстом
  * поверх контенту, не зсуваючи layout. Закриття: клік-зовні / кнопка / Escape.
  */
-export function ThinkingBlock({ content, streaming }: ThinkingBlockProps): React.ReactNode {
+export function ThinkingBlock({ content, streaming, showCompleted = false }: ThinkingBlockProps): React.ReactNode {
 	const [open, setOpen] = useState(false);
+
+	// Завершений thinking приховано, якщо глобальний toggle вимкнено (відповідь рендериться на місці).
+	if (!streaming && !showCompleted) return null;
 
 	useEffect(() => {
 		if (!open) return;
