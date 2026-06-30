@@ -8,9 +8,11 @@ import {
 import { runAgentLoop } from "../agent-loop.ts";
 import {
 	BLOCK_CUSTOM_TYPE,
+	compactBlockInternals,
 	createBlockEndTool,
 	createBlockHolder,
 	createBlockStartTool,
+	extractBlockRanges,
 	type BlockHolder,
 	type BlockMetadata,
 } from "../logic-block.ts";
@@ -354,6 +356,14 @@ export class AgentHarness<
 		const context = await this.session.buildContext();
 		const resources = this.getResources();
 		const sessionMetadata = await this.session.getMetadata();
+		// Крок B: scoped compaction — прибрати внутрішності ЗАКРИТИХ блоків з model-facing контексту.
+		// Лише при logicBlocks; метадані блоків беруться з custom-entries гілки сесії.
+		let messages = context.messages;
+		if (this.logicBlocks) {
+			const branch = await this.session.getBranch();
+			const blocks = extractBlockRanges(branch as Array<{ type: string; customType?: string; data?: unknown }>);
+			messages = compactBlockInternals(messages, blocks);
+		}
 		const tools = [...this.tools.values()];
 		const activeTools = this.activeToolNames
 			.map((name) => this.tools.get(name))
@@ -372,7 +382,7 @@ export class AgentHarness<
 			});
 		}
 		return {
-			messages: context.messages,
+			messages,
 			resources,
 			streamOptions: cloneStreamOptions(this.streamOptions),
 			sessionId: sessionMetadata.id,

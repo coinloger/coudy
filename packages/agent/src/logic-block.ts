@@ -1,16 +1,19 @@
 /**
- * Logic Block — Крок A (механіка + enforcement).
+ * Logic Block — Крок A (механіка + enforcement) + Крок B (scoped compaction).
  *
  * Блок = пара маркер-тулзів (`block_start`/`block_end`), що обгортає регіон викликів
  * тулзів. Модель змушена працювати через блоки: на верхньому рівні (поза блоком)
  * доступний ЛИШЕ `block_start`; усі реальні тулзи — лише всередині відкритого блоку;
- * `block_end` закриває блок і записує підсумок (для компакції в Кроці B).
+ * `block_end` закриває блок і записує підсумок.
  *
- * Компакція context-builder у цьому кроці НЕ робиться (сирий I/O лишається в контексті).
+ * Крок B: для ЗАКРИТИХ блоків (минулі ходи) model-facing контекст компактується —
+ * внутрішні toolCall'и + toolResult + проміжні thinking/text виключаються, лишається
+ * лише goal+summary (власне block_start/block_end маркери з їхніми ack-result'ами).
+ * Відкритий блок (поточний хід) НЕ компактується (live). JSONL не чіпається.
  */
 
 import { Type } from "typebox";
-import type { AgentTool, AgentToolResult } from "./types.ts";
+import type { AgentMessage, AgentTool, AgentToolResult } from "./types.ts";
 
 /** Стан відкритого блоку (живе в turn-лупі харнесу). */
 export interface BlockState {
@@ -142,3 +145,116 @@ export function createBlockEndTool(holder: BlockHolder, writer: BlockWriter): Ag
 }
 
 export const BLOCK_TOOL_NAMES = ["block_start", "block_end"] as const;
+
+// ===== Крок B: scoped compaction у context-builder =====
+
+/** Звужені метадані блоку, потрібні для компакції контексту. */
+export interface BlockRange {
+	startCallId: string;
+	endCallId: string;
+}
+
+/**
+ * Витягнути id всіх toolCall'ів із assistant-повідомлення (якщо це assistant).
+ */
+function assistantToolCallIds(msg: AgentMessage): string[] {
+	if (typeof msg !== "object" || msg === null || (msg as { role?: string }).role !== "assistant") return [];
+	const content = (msg as { content?: unknown }).content;
+	if (!Array.isArray(content)) return [];
+	return content
+		.filter((c): c is { type: "toolCall"; id: string } =>
+			typeof c === "object" && c !== null && (c as { type?: string }).type === "toolCall" && typeof (c as { id?: unknown }).id === "string")
+		.map((c) => c.id);
+}
+
+/** Чи містить assistant-повідомлення toolCall із заданим id (маркер блоку)? */
+function hasToolCallId(msg: AgentMessage, callId: string): boolean {
+	return assistantToolCallIds(msg).includes(callId);
+}
+
+/**
+ * Прибрати внутрішності ЗАКРИТИХ блоків із model-facing контексту (Крок B).
+ *
+ * Для кожного блоку (startCallId → endCallId) виключаються повідомлення строго між
+ * маркерами: проміжні assistant (thinking/text/internal toolCalls) + їхні toolResult.
+ * Маркери block_start/block_end + їхні ack-result'и залишаються → модель бачить goal+summary.
+ *
+ * Відкритий блок (без endCallId / не в `blocks`) не компактується — залишається наживо.
+ * JSONL не чіпається (транскрипт збережено) — фільтрація лише у вигляді контексту.
+ *
+ * API-валідність: дропаємо toolCall разом з його toolResult (за id), orphaned result не виникає.
+ */
+export function compactBlockInternals(messages: AgentMessage[], blocks: BlockRange[]): AgentMessage[] {
+	if (blocks.length === 0) return messages;
+
+	// 1. Знайти індекси маркерів кожного блоку + множину "внутрішніх" toolCallId.
+	interface ResolvedBlock {
+		startIdx: number;
+		endIdx: number;
+	}
+	const resolved: ResolvedBlock[] = [];
+	const internalCallIds = new Set<string>();
+
+	for (const block of blocks) {
+		let startIdx = -1;
+		let endIdx = -1;
+		for (let i = 0; i < messages.length; i++) {
+			if (startIdx === -1 && hasToolCallId(messages[i]!, block.startCallId)) {
+				startIdx = i;
+				continue;
+			}
+			if (startIdx !== -1 && hasToolCallId(messages[i]!, block.endCallId)) {
+				endIdx = i;
+				break;
+			}
+		}
+		if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx + 1) continue; // маркери не знайдені або порожній блок
+		resolved.push({ startIdx, endIdx });
+		// внутрішні toolCallId (асистентські повідомлення строго між маркерами)
+		for (let i = startIdx + 1; i < endIdx; i++) {
+			for (const id of assistantToolCallIds(messages[i]!)) internalCallIds.add(id);
+		}
+	}
+
+	if (resolved.length === 0 && internalCallIds.size === 0) return messages;
+
+	// 2. Допоміжна перевірка: повідомлення строго всередині будь-якого блоку.
+	const isStrictlyInsideAnyBlock = (i: number): boolean =>
+		resolved.some((b) => i > b.startIdx && i < b.endIdx);
+
+	// 3. Відфільтрувати: дропати toolResult із внутрішнім toolCallId + дропати assistant всередині блоку
+	//    (вони містять лише внутрішній контент; ack-result маркерів має startCallId/endCallId → не дропається).
+	const result: AgentMessage[] = [];
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i]!;
+		const role = (msg as { role?: string }).role;
+		// toolResult з внутрішнім toolCallId → дропнути (парний до дропнутого toolCall).
+		if (role === "toolResult" && internalCallIds.has((msg as { toolCallId: string }).toolCallId)) {
+			continue;
+		}
+		// assistant-повідомлення строго всередині блоку → дропнути (внутрішній контент).
+		if (role === "assistant" && isStrictlyInsideAnyBlock(i)) {
+			continue;
+		}
+		result.push(msg);
+	}
+	return result;
+}
+
+/**
+ * Дістати метадані ЗАКРИТИХ блоків із записів сесії (custom-entries customType:block).
+ * Лише блоки з повною парою startCallId+endCallId (закриті).
+ */
+export function extractBlockRanges(
+	entries: Array<{ type: string; customType?: string; data?: unknown }>,
+): BlockRange[] {
+	const ranges: BlockRange[] = [];
+	for (const e of entries) {
+		if (e.type !== "custom" || e.customType !== BLOCK_CUSTOM_TYPE) continue;
+		const data = e.data as Partial<BlockMetadata> | undefined;
+		if (data && typeof data.startCallId === "string" && typeof data.endCallId === "string") {
+			ranges.push({ startCallId: data.startCallId, endCallId: data.endCallId });
+		}
+	}
+	return ranges;
+}
