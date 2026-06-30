@@ -163,6 +163,16 @@ function getLastAssistantUsageInfo(messages: AgentMessage[]): { usage: Usage; in
 
 /** Estimate context tokens for messages using provider usage when available. */
 export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEstimate {
+	// Після compact кешоване usage останнього assistant стосується контексту ДО зведення → невалідне
+	// (стосується більшого контексту з поверненими повідомленнями). Перерахуємо реальний розмір
+	// summary + kept через estimateTokens, щоб ContextGauge відобразив зменшення контексту.
+	const hasCompaction = messages.some((m) => m.role === "compactionSummary");
+	if (hasCompaction) {
+		let estimated = 0;
+		for (const message of messages) estimated += estimateTokens(message);
+		return { tokens: estimated, usageTokens: 0, trailingTokens: estimated, lastUsageIndex: null };
+	}
+
 	const usageInfo = getLastAssistantUsageInfo(messages);
 
 	if (!usageInfo) {
