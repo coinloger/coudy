@@ -34,6 +34,8 @@ export interface BlockMetadata {
 	summary: string;
 	sources?: string[];
 	filesTouched?: string[];
+	/** true = блок закрито авто-закриттям (модель не викликала block_end). */
+	autoClosed?: boolean;
 }
 
 /** Тип метаданих блоку в сесії (customType). */
@@ -175,6 +177,45 @@ function assistantToolCallIds(msg: AgentMessage): string[] {
 /** Чи містить assistant-повідомлення toolCall із заданим id (маркер блоку)? */
 function hasToolCallId(msg: AgentMessage, callId: string): boolean {
 	return assistantToolCallIds(msg).includes(callId);
+}
+
+/** Витягнути склеєний текст із assistant-повідомлення (для best-effort summary). */
+function lastAssistantText(msg: AgentMessage): string {
+	if (typeof msg !== "object" || msg === null || (msg as { role?: string }).role !== "assistant") return "";
+	const content = (msg as { content?: unknown }).content;
+	if (!Array.isArray(content)) return "";
+	return content
+		.filter(
+			(c): c is { type: "text"; text: string } =>
+				typeof c === "object" &&
+				c !== null &&
+				(c as { type?: string }).type === "text" &&
+				typeof (c as { text?: unknown }).text === "string",
+		)
+		.map((c) => c.text)
+		.join("")
+		.trim();
+}
+
+/**
+ * Best-effort підсумок для auto-closed блоку: останній assistant-текст після block_start
+ * (це готова відповідь моделі, яку вона написала, забувши закрити блок).
+ * Якщо тексту нема → fallback.
+ */
+export function extractBlockSummary(messages: AgentMessage[], startCallId: string): string {
+	let startIdx = -1;
+	for (let i = 0; i < messages.length; i++) {
+		if (hasToolCallId(messages[i]!, startCallId)) {
+			startIdx = i;
+			break;
+		}
+	}
+	if (startIdx === -1) return "(роботу виконано, підсумок відсутній)";
+	for (let i = messages.length - 1; i > startIdx; i--) {
+		const text = lastAssistantText(messages[i]!);
+		if (text) return text;
+	}
+	return "(роботу виконано, підсумок відсутній)";
 }
 
 /**

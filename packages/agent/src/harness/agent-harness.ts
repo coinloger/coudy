@@ -13,6 +13,7 @@ import {
 	createBlockHolder,
 	createBlockStartTool,
 	extractBlockRanges,
+	extractBlockSummary,
 	type BlockHolder,
 	type BlockMetadata,
 } from "../logic-block.ts";
@@ -180,6 +181,10 @@ interface AgentHarnessTurnState<
 	tools: TTool[];
 	activeTools: TTool[];
 }
+
+/** Липке нагадування: дописується в кінець model-facing контексту, поки блок відкритий. */
+const BLOCK_OPEN_REMINDER =
+	"⚠️ У тебе ВІДКРИТИЙ logic-блок. Перед фінальною відповіддю — ЗАКРИЙ його block_end зі стислим підсумком. Поки блок відкритий — фінальну відповідь користувачу НЕ пиши (лише тулзи + короткі нотатки).";
 
 export class AgentHarness<
 	TSkill extends Skill = Skill,
@@ -414,11 +419,37 @@ export class AgentHarness<
 		turnState: AgentHarnessTurnState<TSkill, TPromptTemplate, TTool>,
 		systemPrompt?: string,
 	): AgentContext {
+		const messages = turnState.messages.slice();
+		// Липке нагадування: якщо блок відкритий — дописати в кінець контексту (ефемерне, не в JSONL).
+		if (this.logicBlocks && this.blockHolder.current !== null) {
+			this.appendBlockReminder(messages);
+		}
 		return {
 			systemPrompt: systemPrompt ?? turnState.systemPrompt,
-			messages: turnState.messages.slice(),
+			messages,
 			tools: this.getOfferedTools(turnState),
 		};
+	}
+
+	/**
+	 * Додати ефемерне нагадування в кінець model-facing messages, коли блок відкритий.
+	 * Зливається у контент останнього toolResult/user (уникнути consecutive-user для Anthropic),
+	 * ніколи не записується в сесію.
+	 */
+	private appendBlockReminder(messages: AgentMessage[]): void {
+		const reminderBlock = { type: "text" as const, text: BLOCK_OPEN_REMINDER };
+		const last = messages[messages.length - 1];
+		if (last && last.role === "toolResult") {
+			messages[messages.length - 1] = { ...last, content: [...last.content, reminderBlock] };
+			return;
+		}
+		if (last && last.role === "user") {
+			const prevContent =
+				typeof last.content === "string" ? [{ type: "text" as const, text: last.content }] : [...last.content];
+			messages[messages.length - 1] = { ...last, content: [...prevContent, reminderBlock] };
+			return;
+		}
+		messages.push({ role: "user", content: [reminderBlock], timestamp: Date.now() });
 	}
 
 	/** Записати метадані блоку в сесію (через чергу pending writes). */
@@ -426,18 +457,85 @@ export class AgentHarness<
 		this.pendingSessionWrites.push({ type: "custom", customType: BLOCK_CUSTOM_TYPE, data: metadata });
 	}
 
-	/** Auto-close: якщо хід завершився з відкритим блоком — записати підсумок best-effort. */
-	private autoCloseBlock(): void {
+	/**
+	 * Auto-close: хід завершився з відкритим блоком (модель не викликала block_end).
+	 * summary = останній assistant-текст у блоці (готова відповідь моделі).
+	 * Синтетичний endCallId + синтетичний block_end-маркер + ack + зауваження → компакція
+	 * спрацьовує (внутрішності дропаються, лишається goal+summary), а фінальний синтетичний
+	 * assistant-текст несе зауваження й гарантує валідне чергування role (assistant після блоку).
+	 */
+	private async autoCloseBlock(): Promise<void> {
 		const block = this.blockHolder.current;
 		if (!block) return;
+		this.blockHolder.current = null;
+		// 1. Best-effort summary: останній assistant-текст у блоці.
+		const context = await this.session.buildContext();
+		const summary = extractBlockSummary(context.messages, block.startCallId);
+		// 2. Синтетичний endCallId — компакція знайде границю (внутрішності дропаються).
+		const endCallId = `block-end-${block.id}`;
+		// 3. Метадані блоку (compaction-діапазон).
 		this.writeBlockMetadata({
 			blockId: block.id,
 			startCallId: block.startCallId,
-			endCallId: "auto-close",
+			endCallId,
 			goal: block.goal,
-			summary: "Блок не закрито моделлю (auto-close).",
+			summary,
+			autoClosed: true,
 		});
-		this.blockHolder.current = null;
+		const zeroUsage = {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		};
+		// 4. Синтетичний block_end-маркер (assistant з toolCall) + ack (summary) → границя ІСНУЄ в messages.
+		this.pendingSessionWrites.push({
+			type: "message",
+			message: {
+				role: "assistant",
+				content: [{ type: "toolCall", id: endCallId, name: "block_end", arguments: { summary } }],
+				api: this.model.api,
+				provider: this.model.provider,
+				model: this.model.id,
+				usage: zeroUsage,
+				stopReason: "toolUse",
+				timestamp: Date.now(),
+			},
+		});
+		this.pendingSessionWrites.push({
+			type: "message",
+			message: {
+				role: "toolResult",
+				toolCallId: endCallId,
+				toolName: "block_end",
+				content: [{ type: "text", text: `Блок закрито (авто-закриття). Підсумок: «${summary}».` }],
+				details: { closed: true, autoClosed: true, blockId: block.id },
+				isError: false,
+				timestamp: Date.now(),
+			},
+		});
+		// 5. Синтетичний assistant-текст: зауваження + гарантує assistant після блоку
+		//    (валідне чергування role перед наступним user-повідомленням ходу).
+		this.pendingSessionWrites.push({
+			type: "message",
+			message: {
+				role: "assistant",
+				content: [
+					{
+						type: "text",
+						text: `⚠️ У попередньому ході ти НЕ закрив logic-блок (авто-закриття). Його підсумок: «${summary}». Врахуй його. Наступного разу ЗАКРИВАЙ блок сам через block_end.`,
+					},
+				],
+				api: this.model.api,
+				provider: this.model.provider,
+				model: this.model.id,
+				usage: zeroUsage,
+				stopReason: "stop",
+				timestamp: Date.now(),
+			},
+		});
 	}
 
 	private createStreamFn(getTurnState: () => AgentHarnessTurnState<TSkill, TPromptTemplate, TTool>): StreamFn {
@@ -689,7 +787,7 @@ export class AgentHarness<
 			throw new AgentHarnessError("invalid_state", "AgentHarness prompt completed without an assistant message");
 		} finally {
 			// Auto-close: хід завершено — якщо блок лишився відкритим, закрити best-effort.
-			this.autoCloseBlock();
+			await this.autoCloseBlock();
 			try {
 				await this.flushPendingSessionWrites();
 			} finally {
