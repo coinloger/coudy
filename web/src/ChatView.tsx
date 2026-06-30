@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Paperclip, ArrowUp, Square, Gauge, Layers, X, Settings } from "lucide-react";
+import { Paperclip, ArrowUp, Square, Gauge, X, Settings } from "lucide-react";
 import type { AgentMessage } from "@coudycode/agent-core";
+import { useNavigate } from "react-router-dom";
 import { ChatSettingsModal } from "./ChatSettingsModal";
+import { findSlashCommand } from "./slash-commands";
+import { toastStore } from "./Toast";
 import type { ImageContent, ToolCall as ToolCallContent } from "@coudycode/ai";
 import {
 	ConversationView,
@@ -57,6 +60,7 @@ interface ServerSession {
 
 /** Чат із реальним агентом (/api/chat SSE) + історія сесії. */
 export default function ChatView({ sessionId, chatPanels = [], messageActions = [] }: ChatViewProps): React.ReactNode {
+	const navigate = useNavigate();
 	// Постійна історія сесії (завантажена з бекенду).
 	const [committed, setCommitted] = useState<AgentMessage[]>([]);
 	const [committedStatus, setCommittedStatus] = useState<Record<string, ToolCallStatus>>({});
@@ -385,6 +389,45 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 	const handleSubmit = (e?: React.FormEvent): void => {
 		e?.preventDefault();
 		const message = input.trim();
+
+		// Slash-команди: /compact, /new, /help, /settings, /library, /model, /copy.
+		if (message.startsWith("/")) {
+			const slash = findSlashCommand(message);
+			if (slash) {
+				setInput("");
+				setImages([]);
+				slash.command.run({
+					args: slash.args,
+					sessionId,
+					startStream,
+					onCompact: handleCompact,
+					onNewChat: () => navigate("/"),
+					onOpenSettings: () => setSettingsOpen(true),
+					onOpenModelSelector: () => {
+						const trigger = document.querySelector<HTMLButtonElement>(
+							".cc-ui-model-selector button",
+						);
+						trigger?.click();
+					},
+					navigate,
+					copyLastAssistant: () => {
+						const last = [...messages].reverse().find((m) => m.role === "assistant");
+						if (!last) {
+							toastStore.push({ title: "Немає відповіді агента для копіювання" });
+							return;
+						}
+						void navigator.clipboard
+							.writeText(extractMessageText(last))
+							.then(() => toastStore.push({ title: "Скопійовано" }));
+					},
+					toast: (msg) => toastStore.push({ title: msg }),
+				});
+			} else {
+				toastStore.push({ title: `Невідома команда: ${message}. Введіть /help` });
+			}
+			return;
+		}
+
 		if (!message && images.length === 0) return;
 		startStream(message, images);
 	};
@@ -452,15 +495,6 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 						templates={promptTemplates}
 						onSelect={handleSelectPrompt}
 					/>
-					<button
-						type="button"
-						className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
-						onClick={handleCompact}
-						disabled={running || compaction !== null}
-						title="Стиснути контекст"
-					>
-					<Layers size={13} /> Compact
-						</button>
 					<button
 						type="button"
 						className="btn btn-sm btn-outline-secondary d-flex align-items-center"
