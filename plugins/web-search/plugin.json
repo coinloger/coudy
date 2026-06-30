@@ -2,7 +2,7 @@
   "name": "web-search",
   "version": "0.1.0",
   "title": "Web Search",
-  "description": "Вебпошук (DuckDuckGo через ddgr / Tavily) — тулз web_search.",
+  "description": "Вебпошук + browse через headless Chrome (Bing/DuckDuckGo). Тулзи web_search + browse.",
   "author": "coudycode",
   "homepage": "https://github.com/coinloger/coudy",
   "minCoreVersion": "0.1.0",

@@ -5,24 +5,20 @@
  * window.React.createElement) → браузер отримує ESM-JS. React береться з
  * глобального window.React, тож JSX працює БЕЗ `import React`.
  *
- * Додає табу налаштувань «Web Search» через ui:settings-tabs: вибір backend
- * (DuckDuckGo ddgr / Tavily) + поле Tavily API-ключа.
+ * Таба налаштувань «Web Search»: вибір пошукового рушія (Bing / DuckDuckGo).
  */
 
 const R = window.React;
 const { useState, useEffect } = R;
 
-type Backend = "ddgr" | "tavily";
+type Engine = "bing" | "ddg";
 interface Config {
-	backend: Backend;
-	hasKey: boolean;
+	engine: Engine;
 }
 
 /** Таба налаштувань Web Search. */
 function WebSearchSettings(): React.ReactNode {
-	const [backend, setBackend] = useState<Backend>("ddgr");
-	const [hasKey, setHasKey] = useState(false);
-	const [tavilyKey, setTavilyKey] = useState("");
+	const [engine, setEngine] = useState<Engine>("ddg");
 	const [busy, setBusy] = useState(false);
 	const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -31,8 +27,7 @@ function WebSearchSettings(): React.ReactNode {
 		void fetch("/api/web-search/config")
 			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
 			.then((d: Config) => {
-				setBackend(d.backend);
-				setHasKey(!!d.hasKey);
+				if (d.engine === "ddg" || d.engine === "bing") setEngine(d.engine);
 			})
 			.catch(() => setMsg({ ok: false, text: "Не вдалося завантажити конфіг" }));
 	}, []);
@@ -43,17 +38,10 @@ function WebSearchSettings(): React.ReactNode {
 		fetch("/api/web-search/config", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({
-				backend,
-				tavilyKey: tavilyKey || undefined,
-			}),
+			body: JSON.stringify({ engine }),
 		})
 			.then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-			.then((d: Config) => {
-				setHasKey(!!d.hasKey);
-				setTavilyKey("");
-				setMsg({ ok: true, text: "Збережено" });
-			})
+			.then(() => setMsg({ ok: true, text: "Збережено" }))
 			.catch(() => setMsg({ ok: false, text: "Не вдалося зберегти" }))
 			.finally(() => setBusy(false));
 	};
@@ -62,56 +50,38 @@ function WebSearchSettings(): React.ReactNode {
 		<div>
 			<h2 className="h5 mb-3">Вебпошук</h2>
 			<p className="text-muted small mb-3">
-				Налаштування інструменту <code>web_search</code>. DuckDuckGo (через{" "}
-				<code>ddgr</code>) працює без ключа; Tavily потребує API-ключа.
+				Налаштування інструментів <code>web_search</code> та <code>browse</code>. Працює через
+				локальний headless Chrome — без зовнішніх API. Оберіть пошуковий рушій за замовчуванням.
 			</p>
 
 			<div className="mb-3">
-				<label className="form-label">Джерело пошуку</label>
+				<label className="form-label">Пошуковий рушій</label>
 				<div className="form-check">
 					<input
 						className="form-check-input"
 						type="radio"
-						name="ws-backend"
-						id="ws-ddgr"
-						checked={backend === "ddgr"}
-						onChange={() => setBackend("ddgr")}
+						name="ws-engine"
+						id="ws-ddg"
+						checked={engine === "ddg"}
+						onChange={() => setEngine("ddg")}
 					/>
-					<label className="form-check-label" htmlFor="ws-ddgr">
-						DuckDuckGo (<code>ddgr</code>, без ключа)
+					<label className="form-check-label" htmlFor="ws-ddg">
+						DuckDuckGo (за замовчуванням)
 					</label>
 				</div>
 				<div className="form-check">
 					<input
 						className="form-check-input"
 						type="radio"
-						name="ws-backend"
-						id="ws-tavily"
-						checked={backend === "tavily"}
-						onChange={() => setBackend("tavily")}
+						name="ws-engine"
+						id="ws-bing"
+						checked={engine === "bing"}
+						onChange={() => setEngine("bing")}
 					/>
-					<label className="form-check-label" htmlFor="ws-tavily">
-						Tavily (з API-ключем)
+					<label className="form-check-label" htmlFor="ws-bing">
+						Bing
 					</label>
 				</div>
-			</div>
-
-			<div className="mb-3">
-				<label className="form-label" htmlFor="ws-key">
-					Tavily API-ключ
-				</label>
-				<input
-					id="ws-key"
-					type="password"
-					className="form-control form-control-sm"
-					placeholder={hasKey ? "•••• (введіть новий, щоб змінити)" : "tvly-…"}
-					value={tavilyKey}
-					onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTavilyKey(e.target.value)}
-					autoComplete="off"
-				/>
-				{hasKey && (
-					<div className="form-text">Ключ збережено. Залиште поле порожнім, щоб не змінювати.</div>
-				)}
 			</div>
 
 			{msg && (
