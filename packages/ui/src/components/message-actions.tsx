@@ -1,9 +1,10 @@
 import type { AgentMessage } from "@coudycode/agent-core";
-import { Copy, RotateCcw, RefreshCw, Clipboard, Trash2, Pencil, Clock, type LucideIcon } from "lucide-react";
+import { Copy, Check, RotateCcw, RefreshCw, Clipboard, Trash2, Pencil, Clock, type LucideIcon } from "lucide-react";
 
 /** Мапа назв-іконок (з MessageAction.icon) → компонент Lucide. */
 const ICONS: Record<string, LucideIcon> = {
 	copy: Copy,
+	check: Check,
 	clipboard: Clipboard,
 	retry: RotateCcw,
 	refresh: RefreshCw,
@@ -32,8 +33,11 @@ export type MessageActionLabel = string | ((message: AgentMessage) => string);
 export interface MessageAction {
 	id: string;
 	label: MessageActionLabel;
-	/** Назва іконки Lucide (опц., ігнорується в headless UI). */
-	icon?: string;
+	/**
+	 * Назва іконки Lucide — сталий рядок, АБО функція від повідомлення
+	 * (напр. copy → check після копіювання). Опц., ігнорується в headless UI.
+	 */
+	icon?: string | ((message: AgentMessage) => string);
 	/** Обробник кліку. Якщо відсутній + display — рендериться як readonly-текст. */
 	onClick?: (message: AgentMessage) => void;
 	/**
@@ -57,8 +61,13 @@ function resolveLabel(label: MessageActionLabel, message: AgentMessage): string 
 	return typeof label === "function" ? label(message) : label;
 }
 
-/** Іконка дії за назвою (lowercase); undefined якщо не задано/невідомо. */
-function resolveIcon(name?: string): LucideIcon | undefined {
+/**
+ * Іконка дії: icon може бути сталим рядком або функцією від повідомлення.
+ * Повертає компонент Lucide або undefined (якщо не задано/невідомо).
+ */
+function resolveIcon(icon: MessageAction["icon"], message: AgentMessage): LucideIcon | undefined {
+	if (!icon) return undefined;
+	const name = typeof icon === "function" ? icon(message) : icon;
 	if (!name) return undefined;
 	return ICONS[name.toLowerCase()];
 }
@@ -75,7 +84,7 @@ export function MessageActionsBar({ message, actions }: MessageActionsBarProps):
 		<div className="cc-ui-msg-actions">
 			{visible.map((action) => {
 				const label = resolveLabel(action.label, message);
-				const Icon = resolveIcon(action.icon);
+				const Icon = resolveIcon(action.icon, message);
 				// readonly-текст (напр. час) — текст + опц. іконка годинника, без кліку.
 				if (action.display && !action.onClick) {
 					return (

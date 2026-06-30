@@ -110,7 +110,7 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 			{
 				id: "copy",
 				label: (m: AgentMessage) => (copiedKey === keyFor(m) ? "Скопійовано" : "Копіювати"),
-				icon: "Copy",
+				icon: (m: AgentMessage) => (copiedKey === keyFor(m) ? "check" : "copy"),
 				onClick: (m: AgentMessage) => {
 					void navigator.clipboard
 						.writeText(extractMessageText(m))
