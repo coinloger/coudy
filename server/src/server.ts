@@ -34,6 +34,7 @@ import { SessionManager } from "./sessions.js";
 import { PromptTemplateStore, SessionPromptBinding } from "./prompts.js";
 import { PluginSessionRegistryImpl, PluginSessionStore } from "./plugin-sessions.js";
 import { handleChat, handleCompact, getGlobalTools } from "./chat.js";
+import { ChatSettingsStore, type ChatSettings } from "./chat-settings.js";
 import { processRegistry } from "./processes.js";
 import {
 	handleLibraryList,
@@ -78,6 +79,8 @@ export class CoudyServer {
   // Шаблони системних промптів (prompts.json) + per-session привʼязки.
   private readonly promptTemplates = new PromptTemplateStore();
   private readonly sessionPromptBindings = new SessionPromptBinding();
+  // Налаштування чату (chat-settings.json): авто-compact toggle + поріг.
+  private readonly chatSettings = new ChatSettingsStore();
   // Plugin-owned ізольовані сесії (declareSession).
   private readonly pluginSessionRegistry = new PluginSessionRegistryImpl();
   private readonly pluginSessionStore = new PluginSessionStore();
@@ -196,7 +199,7 @@ export class CoudyServer {
 
     // CORS — фронтенд (Vite) живе на іншому порті.
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
     if (method === "OPTIONS") {
       res.writeHead(204);
@@ -599,6 +602,27 @@ export class CoudyServer {
       return;
     }
 
+    // GET /api/chat-settings — налаштування чату (злиття з дефолтами).
+    if (method === "GET" && pathname === "/api/chat-settings") {
+      this.sendJson(res, 200, this.chatSettings.get());
+      return;
+    }
+
+    // PUT /api/chat-settings — оновити налаштування чату (валідація + збереження).
+    if (method === "PUT" && pathname === "/api/chat-settings") {
+      const body = await this.readJsonBody(req);
+      const patch: Partial<ChatSettings> = {};
+      if (body && typeof body.autoCompact === "boolean") patch.autoCompact = body.autoCompact;
+      if (body && typeof body.compactThresholdPct === "number") patch.compactThresholdPct = body.compactThresholdPct;
+      try {
+        const updated = this.chatSettings.update(patch);
+        this.sendJson(res, 200, updated);
+      } catch (e) {
+        this.sendJson(res, 400, { error: e instanceof Error ? e.message : String(e) });
+      }
+      return;
+    }
+
     // POST /api/prompts/seed — додати відсутні дефолтні pi-шаблони (без перезапису).
     if (method === "POST" && pathname === "/api/prompts/seed") {
       const result = this.promptTemplates.addMissingDefaults();
@@ -744,6 +768,7 @@ export class CoudyServer {
         this.sessionPromptBindings,
         this.pluginSessionRegistry,
         this.pluginSessionStore,
+        this.chatSettings,
         {
           tryStart: (sid, abort) => this.tryStartChat(sid, abort),
           finish: (sid) => this.finishChat(sid),

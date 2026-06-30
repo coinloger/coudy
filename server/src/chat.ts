@@ -7,8 +7,6 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import {
 	AgentHarness,
 	estimateContextTokens,
-	shouldCompact,
-	DEFAULT_COMPACTION_SETTINGS,
 } from "@coudycode/agent-core/node";
 import type { AgentEvent, AgentHarnessEvent, AgentTool } from "@coudycode/agent-core";
 import { NodeExecutionEnv } from "@coudycode/agent-core/node";
@@ -32,6 +30,7 @@ import {
 import type { PluginSessionOwnership } from "@coudycode/core";
 import { processRegistry } from "./processes.js";
 import { createLibraryTools, resetLibraryTurn } from "./library.js";
+import { ChatSettingsStore } from "./chat-settings.js";
 
 /** Конфіг моделі для запуску агента. */
 interface ResolvedModel {
@@ -376,6 +375,7 @@ export async function handleChat(
 	promptBindings: SessionPromptBinding,
 	pluginSessionRegistry: PluginSessionRegistryImpl,
 	pluginSessionStore: PluginSessionStore,
+	chatSettings: ChatSettingsStore,
 	lock: ChatLock,
 ): Promise<void> {
 	initSSE(res);
@@ -509,16 +509,21 @@ export async function handleChat(
 		/* авто-назва необовʼязкова — не ламати стрім */
 	}
 
-	// Авто-compact при наближенні до ліміту (зберігається автоматично, стрімить session_compact).
+	// Авто-compact при досягненні відсоткового порогу contextWindow (зберігається автоматично,
+	// стрімить session_compact). Поріг + toggle — з chat-settings (default 80%).
 	if (promptError === null) {
 		try {
-			const ctx = await opened.session.buildContext();
-			const { tokens } = estimateContextTokens(ctx.messages);
-			if (shouldCompact(tokens, resolved.model.contextWindow, DEFAULT_COMPACTION_SETTINGS)) {
-				writeSSE(res, { type: "compaction_start" });
-				const autoUnsub = harness.subscribe((event: AgentHarnessEvent) => writeSSE(res, event));
-				await harness.compact();
-				autoUnsub();
+			const settings = chatSettings.get();
+			if (settings.autoCompact) {
+				const ctx = await opened.session.buildContext();
+				const { tokens } = estimateContextTokens(ctx.messages);
+				const threshold = Math.floor(resolved.model.contextWindow * (settings.compactThresholdPct / 100));
+				if (tokens >= threshold) {
+					writeSSE(res, { type: "compaction_start" });
+					const autoUnsub = harness.subscribe((event: AgentHarnessEvent) => writeSSE(res, event));
+					await harness.compact();
+					autoUnsub();
+				}
 			}
 		} catch {
 			/* compact необовʼязковий */
