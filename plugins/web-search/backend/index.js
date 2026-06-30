@@ -202,6 +202,7 @@ const browseTool = {
 		"Відкриває URL у браузері та повертає текст сторінки. Корисно для читання конкретної сторінки за посиланням (документація, стаття, ман та ін.).",
 	parameters: browseSchema,
 	label: "Browse URL",
+	group: "web-search",
 	execute: executeBrowse,
 };
 
@@ -366,6 +367,7 @@ const webSearchTool = {
 		"Вебпошук в інтернеті за запитом (Bing/DuckDuckGo через браузер). Повертає заголовок, URL та уривок найрелевантніших результатів. Використовуй, коли потрібна актуальна інформація, якої може не бути у твоїх знаннях.",
 	parameters: webSearchSchema,
 	label: "Web Search",
+	group: "web-search",
 	execute: executeWebSearch,
 };
 

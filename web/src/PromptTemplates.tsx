@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Download, FileText, Lock, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, FileText, Lock, Pencil, Plus, Trash2 } from "lucide-react";
 import type { PromptTemplateEntry } from "./PromptSelector";
 
 interface PromptTemplatesProps {}
@@ -56,6 +56,28 @@ function groupTemplates(templates: PromptTemplateEntry[]): Array<[string, Prompt
 interface ToolInfo {
 	name: string;
 	description?: string;
+	label?: string;
+	group?: string;
+}
+
+/** Людська назва групи тулзів: «standard» → «Базові», інакше prettify id плагіна. */
+function toolGroupLabel(g: string): string {
+	if (g === "standard") return "Базові";
+	return g
+		.split("-")
+		.map((w) => (w.length === 0 ? w : w[0].toUpperCase() + w.slice(1)))
+		.join(" ");
+}
+
+/** Згрупувати тулзи за group (default «standard»), зберігаючи порядок появи. */
+function groupTools(tools: ToolInfo[]): Array<[string, ToolInfo[]]> {
+	const map = new Map<string, ToolInfo[]>();
+	for (const t of tools) {
+		const g = t.group ?? "standard";
+		const arr = map.get(g);
+		if (arr) arr.push(t); else map.set(g, [t]);
+	}
+	return Array.from(map.entries());
 }
 
 /** Таба налаштувань «Шаблони системних промптів» — CRUD через /api/prompts. */
@@ -67,6 +89,8 @@ export default function PromptTemplates(_props: PromptTemplatesProps): React.Rea
 	const [seeding, setSeeding] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
+	/** Згорнуті групи тулзів у формі (id групи). */
+	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
 	const refresh = useCallback(async (): Promise<void> => {
 		try {
@@ -285,25 +309,71 @@ export default function PromptTemplates(_props: PromptTemplatesProps): React.Rea
 							{availableTools.length === 0 ? (
 								<div className="text-muted small">Завантаження тулзів…</div>
 							) : (
-								<div className="d-flex flex-wrap gap-2">
-									{availableTools.map((tool) => {
-										const checked = form.tools === null || (form.tools ?? []).includes(tool.name);
+								<div className="cc-tool-groups">
+									{groupTools(availableTools).map(([g, items]) => {
+										const groupNames = items.map((t) => t.name);
+										const selectedInGroup = form.tools === null ? items.length : groupNames.filter((n) => (form.tools ?? []).includes(n)).length;
+										const allOn = selectedInGroup === items.length;
+										const someOn = selectedInGroup > 0 && selectedInGroup < items.length;
+										const collapsed = collapsedGroups.has(g);
 										return (
-											<label key={tool.name} className="cc-tool-chip" title={tool.description ?? tool.name}>
-												<input
-													type="checkbox"
-													className="form-check-input"
-													checked={checked}
-													onChange={(e) => {
-														// null = усі → при зміні переходимо до явного набору; інакше toggle окремого тулза.
-														const base = form.tools === null ? availableTools.map((t) => t.name) : [...(form.tools ?? [])];
-														const set = new Set(base);
-														if (e.target.checked) set.add(tool.name); else set.delete(tool.name);
-														setForm({ ...form, tools: Array.from(set) });
-													}}
-												/>
-												<span className="small">{tool.name}</span>
-											</label>
+											<div key={g} className="cc-tool-group">
+												<div className="cc-tool-group-head">
+													<label className="cc-tool-group-toggle">
+														<input
+															type="checkbox"
+															className="form-check-input"
+															checked={allOn}
+															ref={(el) => { if (el) el.indeterminate = someOn; }}
+															onChange={() => {
+																// null = усі обрано. Вимкнення групи → явний набір без неї; увімкнення → додати групу (якщо стали всі → null).
+																const base = form.tools === null ? availableTools.map((t) => t.name) : [...(form.tools ?? [])];
+																const set = new Set(base);
+																if (allOn) { for (const n of groupNames) set.delete(n); }
+																else { for (const n of groupNames) set.add(n); }
+																setForm({ ...form, tools: set.size === availableTools.length ? null : Array.from(set) });
+															}}
+														/>
+														<span className="cc-tool-group-label">{toolGroupLabel(g)}</span>
+													</label>
+													<button
+														type="button"
+														className="cc-tool-group-collapse"
+														onClick={() => {
+															const next = new Set(collapsedGroups);
+															if (next.has(g)) next.delete(g); else next.add(g);
+															setCollapsedGroups(next);
+														}}
+														title={collapsed ? "Розгорнути" : "Згорнути"}
+													>
+														{collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+													</button>
+												</div>
+												{!collapsed && (
+													<div className="cc-tool-group-body d-flex flex-wrap gap-2">
+														{items.map((tool) => {
+															const checked = form.tools === null || (form.tools ?? []).includes(tool.name);
+															return (
+																<label key={tool.name} className="cc-tool-chip" title={tool.description ?? tool.name}>
+																	<input
+																		type="checkbox"
+																		className="form-check-input"
+																		checked={checked}
+																		onChange={(e) => {
+																			// null = усі → при зміні переходимо до явного набору; інакше toggle окремого тулза.
+																			const base = form.tools === null ? availableTools.map((t) => t.name) : [...(form.tools ?? [])];
+																			const set = new Set(base);
+																			if (e.target.checked) set.add(tool.name); else set.delete(tool.name);
+																			setForm({ ...form, tools: Array.from(set) });
+																		}}
+																	/>
+																	<span className="small">{tool.label ?? tool.name}</span>
+																</label>
+															);
+														})}
+													</div>
+												)}
+											</div>
 										);
 									})}
 								</div>

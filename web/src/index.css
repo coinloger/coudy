@@ -859,6 +859,64 @@ body {
 	font-weight: 500;
 }
 
+/* Групи тулзів у селекторі шаблону (Базові / Web Search / Skill Library …). */
+.cc-tool-groups {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.cc-tool-group {
+	border: 1px solid var(--pi-border-muted, #d0d0d0);
+	border-radius: 8px;
+	overflow: hidden;
+}
+
+.cc-tool-group-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 10px;
+	background: var(--pi-bg-subtle, #f6f8fa);
+	border-bottom: 1px solid var(--pi-border-muted, #e0e0e0);
+}
+
+.cc-tool-group-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	cursor: pointer;
+	font-weight: 600;
+	font-size: 13px;
+	color: var(--pi-text, #1f2328);
+	user-select: none;
+}
+
+.cc-tool-group-toggle input {
+	margin: 0;
+	cursor: pointer;
+}
+
+.cc-tool-group-collapse {
+	margin-left: auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	padding: 2px;
+	color: var(--pi-text-muted, #6c6c6c);
+	line-height: 0;
+}
+
+.cc-tool-group-collapse:hover {
+	color: var(--pi-text, #1f2328);
+}
+
+.cc-tool-group-body {
+	padding: 10px;
+
 .cc-prompt-tools-badge {
 	font-size: 11px;
 	text-transform: lowercase;

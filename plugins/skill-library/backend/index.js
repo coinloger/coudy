@@ -422,7 +422,7 @@ function createLibraryTools(sessionId, cwd) {
 		},
 	];
 
-	return defs.map((d) => wrapToolDefinition(d));
+	return defs.map((d) => wrapToolDefinition({ ...d, group: "skill-library" }));
 }
 
 // ===== HTTP-роути (через server:routes, path-params в ctx.params) =====

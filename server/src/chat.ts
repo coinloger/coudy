@@ -151,6 +151,9 @@ function assistantMessageText(msg: { content: unknown } | undefined | null): str
 export interface ToolInfo {
 	name: string;
 	description?: string;
+	label: string;
+	/** Група: «standard» = базові; інакше — id плагіна. */
+	group: string;
 }
 
 /**
@@ -161,7 +164,12 @@ export async function getGlobalTools(cwd: string, hooks: HookEngine): Promise<To
 	// Базові тулзи + processes-тулз; плагіни додають свої через filter «tools:register».
 	const base = [...createAllTools(cwd), createProcessesTool()];
 	const tools = await hooks.applyFilters<AgentTool[]>("tools:register", base, { sessionId: "__global__", cwd });
-	return tools.map((t) => ({ name: t.name, description: t.description }));
+	return tools.map((t) => ({
+		name: t.name,
+		description: t.description,
+		label: t.label ?? t.name,
+		group: t.group ?? "standard",
+	}));
 }
 
 /**

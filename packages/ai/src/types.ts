@@ -360,6 +360,8 @@ export interface Tool<TParameters extends TSchema = TSchema> {
 	name: string;
 	description: string;
 	parameters: TParameters;
+	/** Група тулза для UI-селектора («standard» = базові; інакше — id плагіна). */
+	group?: string;
 }
 
 export interface Context {

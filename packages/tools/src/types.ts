@@ -39,6 +39,8 @@ export interface ToolDefinition<
 	name: string;
 	label: string;
 	description: string;
+	/** Група тулза для UI-селектора («standard» = базові; інакше — id плагіна). */
+	group?: string;
 	promptSnippet?: string;
 	promptGuidelines?: string[];
 	parameters: TParams;
