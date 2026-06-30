@@ -18,9 +18,6 @@ export interface ThinkingBlockProps {
 export function ThinkingBlock({ content, streaming, showCompleted = false }: ThinkingBlockProps): React.ReactNode {
 	const [open, setOpen] = useState(false);
 
-	// Завершений thinking приховано, якщо глобальний toggle вимкнено (відповідь рендериться на місці).
-	if (!streaming && !showCompleted) return null;
-
 	useEffect(() => {
 		if (!open) return;
 		const onKey = (e: KeyboardEvent): void => {
@@ -29,6 +26,9 @@ export function ThinkingBlock({ content, streaming, showCompleted = false }: Thi
 		document.addEventListener("keydown", onKey);
 		return () => document.removeEventListener("keydown", onKey);
 	}, [open]);
+
+	// Завершений thinking приховано, якщо глобальний toggle вимкнено (відповідь рендериться на місці).
+	if (!streaming && !showCompleted) return null;
 
 	return (
 		<div className="cc-ui-thinking">
