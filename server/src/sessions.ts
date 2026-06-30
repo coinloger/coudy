@@ -63,6 +63,8 @@ export interface SessionManagerOptions {
 	getPromptTemplateId?: (sessionId: string) => string | null;
 	/** Знайти шаблон за id → {id, name} (для поля promptTemplate сесії). */
 	resolvePromptTemplate?: (templateId: string) => { id: string; name: string } | null;
+	/** Авто-привʼязка дефолтного шаблону при створенні сесії (бічний ефект). */
+	autoBindPromptTemplate?: (sessionId: string) => void;
 	/** Власність plugin-сесії за realSessionUuid (для полів plugin/pluginSessionId). */
 	resolveOwnership?: (sessionId: string) => { pluginName: string; pluginSessionId: string } | null;
 }
@@ -78,6 +80,7 @@ export class SessionManager {
 	private readonly listConnectedModels?: SessionManagerOptions["listConnectedModels"];
 	private readonly getPromptTemplateId?: SessionManagerOptions["getPromptTemplateId"];
 	private readonly resolvePromptTemplate?: SessionManagerOptions["resolvePromptTemplate"];
+	private readonly autoBindPromptTemplate?: SessionManagerOptions["autoBindPromptTemplate"];
 	private readonly resolveOwnership?: SessionManagerOptions["resolveOwnership"];
 
 	constructor(options: SessionManagerOptions = {}) {
@@ -88,6 +91,7 @@ export class SessionManager {
 		this.listConnectedModels = options.listConnectedModels;
 		this.getPromptTemplateId = options.getPromptTemplateId;
 		this.resolvePromptTemplate = options.resolvePromptTemplate;
+		this.autoBindPromptTemplate = options.autoBindPromptTemplate;
 		this.resolveOwnership = options.resolveOwnership;
 	}
 
@@ -103,6 +107,8 @@ export class SessionManager {
 			await session.appendModelChange(initial.provider, initial.modelId);
 		}
 		const meta = await session.getMetadata();
+		// Авто-привʼязка дефолтного (protected) шаблону системного промпту.
+		this.autoBindPromptTemplate?.(meta.id);
 		const entries = await session.getEntries();
 		const ctx = await session.buildContext();
 		return this.summarize(meta, name ?? null, entries, ctx.model, ctx.messages);

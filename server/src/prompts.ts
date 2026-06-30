@@ -26,6 +26,10 @@ export interface PromptTemplate {
 	 * - ["read","grep",…] → лише ці.
 	 */
 	tools?: string[] | null;
+	/** true = захищений (не видаляється). Ключові поля (group) не редагуються. */
+	protected?: boolean;
+	/** Група шаблону: "standard" (дефолт) | "<pluginName>". */
+	group?: string;
 }
 
 /** Формат файлу prompts.json. */
@@ -91,7 +95,36 @@ function staticCodingPrompt(): string {
 
 /** Готові шаблони з pi (засіваються при першому запуску, якщо store порожній). */
 function getDefaultTemplates(): PromptTemplate[] {
+	const group = "standard";
 	return [
+		// Protected default — універсальний асистент, дефолт для нових сесій.
+		{
+			id: randomUUID(),
+			name: "Персональний асистент",
+			content: [
+				"Ти — персональний асистент coudycode. Універсальний помічник користувача: допомагаєш з програмуванням, дослідженнями, текстами, задачами та плануванням.",
+				"",
+				"## Стиль",
+				"- Спілкуйся українською — стисло, по суті, без зайвого.",
+				"- Дій спершу, пояснюй потім. Не розповідай план, поки не виконаєш.",
+				"- Завдання потребує інструментів — використовуй їх (read/bash/edit/write/grep/find/ls/fetch).",
+				"- Для актуальної інформації з інтернету — web_search або browse.",
+				"",
+				"## Принципи",
+				"- Роби мінімум змін, необхідних для задачі. Без рефакторингу і зайвих фіч.",
+				"- Код — чистий, без анотацій типів і коментарів там, де вони очевидні з самого коду.",
+				"- Помилки показуй ясно, з контекстом і шляхом до файлу.",
+				"- Не вгадуй наміри користувача. Якщо неоднозначно і ти заблокований — уточни, інакше бери розумні дефолти.",
+				"",
+				"## Інструменти та бібліотека",
+				"- Базові тулзи доступні за замовчуванням.",
+				"- Перед складною логікою перевір library_search — можливо готове рішення вже існує в глобальній бібліотеці.",
+			].join("\n"),
+			createdAt: new Date().toISOString(),
+			tools: null,
+			protected: true,
+			group,
+		},
 		{
 			id: randomUUID(),
 			name: "Бібліотека",
@@ -129,6 +162,7 @@ function getDefaultTemplates(): PromptTemplate[] {
 			].join("\n"),
 			createdAt: new Date().toISOString(),
 			tools: null,
+			group,
 		},
 		{
 			id: randomUUID(),
@@ -136,6 +170,7 @@ function getDefaultTemplates(): PromptTemplate[] {
 			content: staticCodingPrompt(),
 			createdAt: new Date().toISOString(),
 			tools: null,
+			group,
 		},
 		{
 			id: randomUUID(),
@@ -166,6 +201,7 @@ function getDefaultTemplates(): PromptTemplate[] {
 			].join("\n"),
 			createdAt: new Date().toISOString(),
 			tools: ["read","bash","grep","find","ls","fetch"],
+			group,
 		},
 		{
 			id: randomUUID(),
@@ -193,6 +229,7 @@ function getDefaultTemplates(): PromptTemplate[] {
 			].join("\n"),
 			createdAt: new Date().toISOString(),
 			tools: ["read","grep","find","ls"],
+			group,
 		},
 		{
 			id: randomUUID(),
@@ -220,6 +257,7 @@ function getDefaultTemplates(): PromptTemplate[] {
 			].join("\n"),
 			createdAt: new Date().toISOString(),
 			tools: ["read","grep","find","ls"],
+			group,
 		},
 	];
 }
@@ -271,6 +309,11 @@ export class PromptTemplateStore {
 		return this.list().find((t) => t.id === id);
 	}
 
+	/** Перший захищений (protected) шаблон — дефолт для нових сесій. */
+	getDefaultProtected(): PromptTemplate | undefined {
+		return this.list().find((t) => t.protected === true);
+	}
+
 	/** Створити шаблон. Валідація: name непорожнє. */
 	create(name: string, content: string, tools?: string[] | null): PromptTemplate {
 		const trimmedName = name.trim();
@@ -309,11 +352,15 @@ export class PromptTemplateStore {
 		return data.templates[idx]!;
 	}
 
-	/** Видалити шаблон. Повертає true якщо видалено. */
+	/**
+	 * Видалити шаблон. Повертає true якщо видалено.
+	 * Захищені (protected) шаблони НЕ видаляються — повертає false (або undefined через isProtected).
+	 */
 	remove(id: string): boolean {
 		const data = readJson<PromptsFile>(this.path, { templates: [] });
 		const idx = data.templates.findIndex((t) => t.id === id);
 		if (idx === -1) return false;
+		if (data.templates[idx]!.protected === true) return false;
 		data.templates.splice(idx, 1);
 		writeJson(this.path, data);
 		return true;

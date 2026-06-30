@@ -32,6 +32,7 @@ import {
 } from "./auth/oauth-sessions.js";
 import { SessionManager } from "./sessions.js";
 import { PromptTemplateStore, SessionPromptBinding } from "./prompts.js";
+import type { PromptTemplate } from "./prompts.js";
 import { PluginSessionRegistryImpl, PluginSessionStore } from "./plugin-sessions.js";
 import { handleChat, handleCompact, getGlobalTools } from "./chat.js";
 import { ChatSettingsStore, type ChatSettings } from "./chat-settings.js";
@@ -126,6 +127,10 @@ export class CoudyServer {
         const t = this.promptTemplates.get(templateId);
         return t ? { id: t.id, name: t.name } : null;
       },
+      autoBindPromptTemplate: (sessionId) => {
+        const def = this.promptTemplates.getDefaultProtected();
+        if (def) this.sessionPromptBindings.set(sessionId, def.id);
+      },
       resolveOwnership: (sessionId) => this.pluginSessionStore.findBySessionId(sessionId),
     });
     this.loader = new PluginLoader({
@@ -140,6 +145,9 @@ export class CoudyServer {
   async start(): Promise<void> {
     // Плагіни вантажаться ДО старту HTTP, щоб server:start бачило все активне.
     await this.loader.loadAll();
+
+    // Додати відсутні стандартні шаблони (зокрема protected default «Персональний асистент»).
+    this.promptTemplates.addMissingDefaults();
 
     this.server = http.createServer((req, res) => {
       this.handle(req, res).catch(err => {
@@ -598,7 +606,10 @@ export class CoudyServer {
 
     // GET /api/prompts — список шаблонів системних промптів.
     if (method === "GET" && pathname === "/api/prompts") {
-      this.sendJson(res, 200, { templates: this.promptTemplates.list() });
+      // Persisted шаблони + плагінні (через хук prompt-templates:register, не persistяться).
+      const persisted = this.promptTemplates.list();
+      const merged = await this.hooks.applyFilters<PromptTemplate[]>("prompt-templates:register", persisted);
+      this.sendJson(res, 200, { templates: merged });
       return;
     }
 
@@ -680,9 +691,18 @@ export class CoudyServer {
       return;
     }
 
-    // DELETE /api/prompts/:id — видалити (+ cleanup привʼязок).
+    // DELETE /api/prompts/:id — видалити (+ cleanup привʼязок). Захищені (protected) не видаляються.
     if (method === "DELETE" && promptMatch) {
       const id = decodeURIComponent(promptMatch[1]);
+      const existing = this.promptTemplates.get(id);
+      if (!existing) {
+        this.sendJson(res, 404, { error: "Шаблон не знайдено" });
+        return;
+      }
+      if (existing.protected) {
+        this.sendJson(res, 403, { error: "Захищений шаблон не можна видалити" });
+        return;
+      }
       const ok = this.promptTemplates.remove(id);
       if (!ok) {
         this.sendJson(res, 404, { error: "Шаблон не знайдено" });

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, ScrollText } from "lucide-react";
 
 /** Шаблон системного промпту (з GET /api/prompts). */
@@ -9,6 +9,10 @@ export interface PromptTemplateEntry {
 	createdAt: string;
 	/** null = усі тулзи; [] = без; [...] = лише ці. */
 	tools?: string[] | null;
+	/** true = захищений (не видаляється). */
+	protected?: boolean;
+	/** Група: "standard" (дефолт) | "<pluginName>". */
+	group?: string;
 }
 
 export interface PromptSelectorProps {
@@ -52,6 +56,19 @@ export function PromptSelector({ current, templates, onSelect }: PromptSelectorP
 		setOpen(false);
 	};
 
+	// Згрупувати шаблони за group (default "standard"), зберігаючи порядок появи.
+	const groups = useMemo<Array<[string, PromptTemplateEntry[]]>>(() => {
+		const map = new Map<string, PromptTemplateEntry[]>();
+		for (const t of templates) {
+			const g = t.group ?? "standard";
+			const arr = map.get(g);
+			if (arr) arr.push(t); else map.set(g, [t]);
+		}
+		return Array.from(map.entries());
+	}, [templates]);
+
+	const groupLabel = (g: string): string => (g === "standard" ? "Стандартні" : g);
+
 	return (
 		<div className="cc-ui-model-selector" ref={boxRef}>
 			<button
@@ -77,21 +94,26 @@ export function PromptSelector({ current, templates, onSelect }: PromptSelectorP
 							<span className="cc-ui-model-option-label">За замовчуванням</span>
 							{current === null && <Check size={13} className="cc-ui-model-check" />}
 						</button>
-						{templates.map((t) => {
-							const active = current?.id === t.id;
-							return (
-								<button
-									key={t.id}
-									type="button"
-									className={`cc-ui-model-option${active ? " cc-ui-model-option-active" : ""}`}
-									onClick={() => handlePick(t.id)}
-									title={t.content}
-								>
-									<span className="cc-ui-model-option-label">{t.name}</span>
-									{active && <Check size={13} className="cc-ui-model-check" />}
-								</button>
-							);
-						})}
+						{groups.map(([g, items]) => (
+							<div key={g} className="cc-ui-model-group">
+								<div className="cc-ui-model-group-label">{groupLabel(g)}</div>
+								{items.map((t) => {
+									const active = current?.id === t.id;
+									return (
+										<button
+											key={t.id}
+											type="button"
+											className={`cc-ui-model-option${active ? " cc-ui-model-option-active" : ""}`}
+											onClick={() => handlePick(t.id)}
+											title={t.content}
+										>
+											<span className="cc-ui-model-option-label">{t.name}</span>
+											{active && <Check size={13} className="cc-ui-model-check" />}
+										</button>
+									);
+								})}
+							</div>
+						))}
 					</div>
 				</div>
 			)}

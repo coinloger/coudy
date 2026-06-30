@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Download, FileText, Pencil, Plus, Trash2 } from "lucide-react";
+import { Download, FileText, Lock, Pencil, Plus, Trash2 } from "lucide-react";
 import type { PromptTemplateEntry } from "./PromptSelector";
 
 interface PromptTemplatesProps {}
@@ -34,6 +34,22 @@ function toolsBadge(tools: string[] | null | undefined): string {
 	if (tools === null || tools === undefined) return "Усі тулзи";
 	if (tools.length === 0) return "Без тулзів";
 	return tools.map((t) => TOOL_LABELS[t] ?? t).join(", ");
+}
+
+/** Людська назва групи шаблонів. */
+function groupLabel(g: string): string {
+	return g === "standard" ? "Стандартні" : g;
+}
+
+/** Розбити шаблони на групи (зберігаючи порядок появи). */
+function groupTemplates(templates: PromptTemplateEntry[]): Array<[string, PromptTemplateEntry[]]> {
+	const map = new Map<string, PromptTemplateEntry[]>();
+	for (const t of templates) {
+		const g = t.group ?? "standard";
+		const arr = map.get(g);
+		if (arr) arr.push(t); else map.set(g, [t]);
+	}
+	return Array.from(map.entries());
 }
 
 /** Доступний тулз з GET /api/tools (для селектора тулзів шаблону). */
@@ -189,32 +205,44 @@ export default function PromptTemplates(_props: PromptTemplatesProps): React.Rea
 					</p>
 				) : (
 					<ul className="list-group">
-						{templates.map((t) => (
-							<li key={t.id} className="cc-prompt-row list-group-item d-flex align-items-center gap-2 px-2 py-2">
-								<FileText size={16} className="text-secondary flex-shrink-0" />
-								<div className="cc-prompt-info flex-grow-1 min-w-0">
-									<div className="cc-prompt-name fw-semibold text-truncate">{t.name}</div>
-									<div className="cc-prompt-preview text-muted small">{t.content || "(порожній)"}</div>
-									<div className="cc-prompt-tools-badge badge bg-light text-secondary border mt-1 fw-normal">{toolsBadge(t.tools)}</div>
-								</div>
-								<div className="cc-prompt-actions d-flex align-items-center flex-shrink-0 gap-1">
-									<button
-										type="button"
-										className="btn btn-sm btn-link text-secondary p-1"
-										onClick={() => startEdit(t)}
-										title="Редагувати"
-									>
-										<Pencil size={14} />
-									</button>
-									<button
-										type="button"
-										className="btn btn-sm btn-link text-danger p-1"
-										onClick={() => void handleDelete(t)}
-										title="Видалити"
-									>
-										<Trash2 size={14} />
-									</button>
-								</div>
+						{groupTemplates(templates).map(([g, items]) => (
+							<li key={g} className="list-group-item px-2 py-2 cc-prompt-group">
+								<div className="cc-prompt-group-label text-uppercase text-muted small fw-semibold mb-1">{groupLabel(g)}</div>
+								<ul className="list-group">
+									{items.map((t) => (
+										<li key={t.id} className="cc-prompt-row list-group-item d-flex align-items-center gap-2 px-2 py-2">
+											<FileText size={16} className="text-secondary flex-shrink-0" />
+											<div className="cc-prompt-info flex-grow-1 min-w-0">
+												<div className="cc-prompt-name fw-semibold text-truncate d-flex align-items-center gap-1">
+													{t.name}
+													{t.protected && <Lock size={12} className="text-secondary" />}
+												</div>
+												<div className="cc-prompt-preview text-muted small">{t.content || "(порожній)"}</div>
+												<div className="cc-prompt-tools-badge badge bg-light text-secondary border mt-1 fw-normal">{toolsBadge(t.tools)}</div>
+											</div>
+											<div className="cc-prompt-actions d-flex align-items-center flex-shrink-0 gap-1">
+												<button
+													type="button"
+													className="btn btn-sm btn-link text-secondary p-1"
+													onClick={() => startEdit(t)}
+													title="Редагувати"
+												>
+													<Pencil size={14} />
+												</button>
+												{!t.protected && (
+													<button
+														type="button"
+														className="btn btn-sm btn-link text-danger p-1"
+														onClick={() => void handleDelete(t)}
+														title="Видалити"
+													>
+														<Trash2 size={14} />
+													</button>
+												)}
+											</div>
+										</li>
+									))}
+								</ul>
 							</li>
 						))}
 					</ul>

@@ -197,6 +197,7 @@ export const CoreHooks = {
   AGENT_BEFORE_PROMPT: "agent:before-prompt",
   AGENT_AFTER_RESPONSE: "agent:after-response",
   PROMPT_SYSTEM: "prompt:system", // filter
+  PROMPT_TEMPLATES_REGISTER: "prompt-templates:register", // filter — PromptTemplate[] від плагінів
   TOOLS_REGISTER: "tools:register", // filter
   PROVIDERS_REGISTER: "providers:register", // filter
 
