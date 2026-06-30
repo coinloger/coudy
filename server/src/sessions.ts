@@ -61,8 +61,8 @@ export interface SessionManagerOptions {
 	listConnectedModels?: () => SessionModel[];
 	/** templateId сесії (null = built-in SYSTEM_PROMPT). */
 	getPromptTemplateId?: (sessionId: string) => string | null;
-	/** Знайти шаблон за id → {id, name} (для поля promptTemplate сесії). */
-	resolvePromptTemplate?: (templateId: string) => { id: string; name: string } | null;
+	/** Знайти шаблон за id → {id, name} (для поля promptTemplate сесії; async бо плагін-шаблони резолвляться через хук). */
+	resolvePromptTemplate?: (templateId: string) => Promise<{ id: string; name: string } | null> | { id: string; name: string } | null;
 	/** Авто-привʼязка дефолтного шаблону при створенні сесії (бічний ефект). */
 	autoBindPromptTemplate?: (sessionId: string) => void;
 	/** Власність plugin-сесії за realSessionUuid (для полів plugin/pluginSessionId). */
@@ -143,7 +143,7 @@ export class SessionManager {
 		// UI-повідомлення: хронологічний порядок (compaction на своїй позиції).
 		// ctx.messages (LLM порядок, compaction згори) лишається для підрахунку токенів.
 		const displayMessages = buildDisplayMessages(entries);
-		const promptTemplate = this.resolveSessionPromptTemplate(id);
+		const promptTemplate = await this.resolveSessionPromptTemplate(id);
 		return { ...this.summarize(meta, name ?? null, entries, ctx.model, ctx.messages), messages: displayMessages, promptTemplate };
 	}
 
@@ -268,9 +268,9 @@ export class SessionManager {
 	}
 
 	/** Резолвити {id, name} шаблону сесії (через привʼязку + resolvePromptTemplate). */
-	private resolveSessionPromptTemplate(sessionId: string): { id: string; name: string } | null {
+	private async resolveSessionPromptTemplate(sessionId: string): Promise<{ id: string; name: string } | null> {
 		const templateId = this.getPromptTemplateId?.(sessionId) ?? null;
 		if (!templateId) return null;
-		return this.resolvePromptTemplate?.(templateId) ?? null;
+		return (await this.resolvePromptTemplate?.(templateId)) ?? null;
 	}
 }

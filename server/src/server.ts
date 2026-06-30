@@ -135,9 +135,13 @@ export class CoudyServer {
       resolveConnectedModel: (provider, modelId) => this.resolveConnectedModel(provider, modelId),
       listConnectedModels: () => this.listConnectedModels(),
       getPromptTemplateId: (sessionId) => this.sessionPromptBindings.get(sessionId),
-      resolvePromptTemplate: (templateId) => {
+      resolvePromptTemplate: async (templateId) => {
         const t = this.promptTemplates.get(templateId);
-        return t ? { id: t.id, name: t.name } : null;
+        if (t) return { id: t.id, name: t.name };
+        // Плагін-шаблон (не persistиться): перевірити через хук prompt-templates:register.
+        const merged = await this.hooks.applyFilters<PromptTemplate[]>("prompt-templates:register", []);
+        const p = merged.find((x) => x.id === templateId);
+        return p ? { id: p.id, name: p.name } : null;
       },
       autoBindPromptTemplate: (sessionId) => {
         const def = this.promptTemplates.getDefaultProtected();
@@ -838,10 +842,18 @@ export class CoudyServer {
             ? body.templateId
             : null
           : null;
-      // Валідація: шаблон має існувати (якщо не null).
-      if (templateId && !this.promptTemplates.get(templateId)) {
-        this.sendJson(res, 404, { error: "Шаблон не знайдено" });
-        return;
+      // Валідація: шаблон має існувати в обʼєднаному списку (persisted + плагінні), якщо не null.
+      if (templateId) {
+        const persisted = this.promptTemplates.get(templateId);
+        const merged = await this.hooks.applyFilters<PromptTemplate[]>(
+          "prompt-templates:register",
+          persisted ? [persisted] : [],
+        );
+        const exists = merged.some((t) => t.id === templateId);
+        if (!exists) {
+          this.sendJson(res, 404, { error: "Шаблон не знайдено" });
+          return;
+        }
       }
       this.sessionPromptBindings.set(id, templateId);
       const session = await this.sessions.get(id);

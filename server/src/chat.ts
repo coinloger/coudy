@@ -20,7 +20,7 @@ import { HookEngine } from "@coudycode/core";
 import { SessionManager } from "./sessions.js";
 import { AuthStorage } from "./auth/auth-storage.js";
 import { ProviderDefinitions } from "./auth/provider-definitions.js";
-import { PromptTemplateStore, SessionPromptBinding } from "./prompts.js";
+import { PromptTemplateStore, SessionPromptBinding, type PromptTemplate } from "./prompts.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import {
   PluginSessionRegistryImpl,
@@ -328,16 +328,21 @@ async function injectContextProvider(
  * Резолвити шаблон сесії: {content, tools} або null (built-in).
  * content — системний промпт; tools — набір тулзів шаблону (null=усі, []=без, [...]=ці).
  */
-function resolveTemplate(
+async function resolveTemplate(
 	sessionId: string,
 	promptTemplates: PromptTemplateStore,
 	promptBindings: SessionPromptBinding,
-): { content: string; tools: string[] | null } | null {
+	hooks: HookEngine,
+): Promise<{ content: string; tools: string[] | null } | null> {
 	const templateId = promptBindings.get(sessionId);
 	if (!templateId) return null;
-	const template = promptTemplates.get(templateId);
-	if (!template) return null;
-	return { content: template.content, tools: template.tools ?? null };
+	// Спершу persisted-сховище, потім — плагінні шаблони (через хук prompt-templates:register).
+	const persisted = promptTemplates.get(templateId);
+	if (persisted) return { content: persisted.content, tools: persisted.tools ?? null };
+	const merged = await hooks.applyFilters<PromptTemplate[]>("prompt-templates:register", []);
+	const pluginTemplate = merged.find((t) => t.id === templateId);
+	if (!pluginTemplate) return null;
+	return { content: pluginTemplate.content, tools: pluginTemplate.tools ?? null };
 }
 
 /** Per-session lock для чат-запуску (фоновий агент; дубль-старт → 409). */
@@ -434,7 +439,7 @@ export async function handleChat(
 				cwd,
 				sessionId,
 				hooks,
-				resolveTemplate(sessionId, promptTemplates, promptBindings),
+				await resolveTemplate(sessionId, promptTemplates, promptBindings, hooks),
 			);
 
 	// Per-session lock: заборонити дубль-старт тієї ж сесії (409 «session busy»).
@@ -589,7 +594,7 @@ export async function handleCompact(
 	const ownership = resolvePluginOwnership(sessionId, pluginSessionRegistry, pluginSessionStore);
 	const harness = ownership
 		? await createPluginHarness(resolved, opened.session, cwd, sessionId, ownership)
-		: await createHarness(resolved, opened.session, cwd, sessionId, hooks, resolveTemplate(sessionId, promptTemplates, promptBindings));
+		: await createHarness(resolved, opened.session, cwd, sessionId, hooks, await resolveTemplate(sessionId, promptTemplates, promptBindings, hooks));
 	const customInstructions =
 		typeof body.customInstructions === "string" ? body.customInstructions : undefined;
 
