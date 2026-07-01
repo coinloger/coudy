@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Paperclip, ArrowUp, Square, Gauge, X, Settings, BrainCircuit, Wrench } from "lucide-react";
+import { Paperclip, ArrowUp, Square, Gauge, X, Settings, BrainCircuit } from "lucide-react";
 import type { AgentMessage } from "@coudycode/agent-core";
 import { useNavigate } from "react-router-dom";
 import { ChatSettingsModal } from "./ChatSettingsModal";
@@ -86,14 +86,6 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 	useEffect(() => {
 		localStorage.setItem("cc-show-reasoning", showReasoning ? "1" : "0");
 	}, [showReasoning]);
-	// Компактний режим тулзів (default ON = лише summary-рядки; OFF = з peek/деталі).
-	// Persist у localStorage. Кнопка-переключатель у шапці чату.
-	const [compactTools, setCompactTools] = useState<boolean>(
-		() => localStorage.getItem("cc-compact-tools") !== "0",
-	);
-	useEffect(() => {
-		localStorage.setItem("cc-compact-tools", compactTools ? "1" : "0");
-	}, [compactTools]);
 	// Активний елемент меню slash-команд (індекс).
 	const [slashActive, setSlashActive] = useState(0);
 
@@ -581,14 +573,6 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 					</button>
 					<button
 						type="button"
-						className={`btn btn-sm d-flex align-items-center ${compactTools ? "btn-outline-secondary" : "btn-primary"}`}
-						onClick={() => setCompactTools((v) => !v)}
-						title={compactTools ? "Показати деталі тулзів" : "Компактні тулзи"}
-					>
-						<Wrench size={14} />
-					</button>
-					<button
-						type="button"
 						className="btn btn-sm btn-outline-secondary d-flex align-items-center"
 						onClick={() => setSettingsOpen(true)}
 						title="Налаштування чату"
@@ -640,7 +624,6 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 							streamingTextIndex={live.streamingTextIndex}
 							streamingThinkingIndex={live.streamingThinkingIndex}
 							showCompleted={showReasoning}
-						compactTools={compactTools}
 							messageActions={combinedActions}
 						/>
 					)}

@@ -10,6 +10,7 @@ export { TOOL_ICON, DEFAULT_TOOL_ICON } from "./tool-icons.ts";
 export { CodeBlock, type CodeBlockProps } from "./CodeBlock.tsx";
 export { ToolCall, type ToolCallProps, type ToolCallStatus } from "./ToolCall.tsx";
 export { ToolGroup, type ToolGroupProps, type ToolGroupEntry } from "./ToolGroup.tsx";
+export { ToolActivity, type ToolActivityProps, type ToolActivityEntry } from "./ToolActivity.tsx";
 export { ToolResult, type ToolResultProps, type ToolResultDiff } from "./ToolResult.tsx";
 export { Diff, type DiffProps } from "./Diff.tsx";
 export { ThinkingBlock, type ThinkingBlockProps } from "./ThinkingBlock.tsx";

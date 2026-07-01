@@ -22,15 +22,13 @@ export interface ToolGroupEntry {
 export interface ToolGroupProps {
 	/** Послідовні виклики інструментів, що групуються. */
 	entries: ToolGroupEntry[];
-	/** Компактний режим: приховати детальний peek під summary (деталі по кліку). */
-	compact?: boolean;
 }
 
 /**
  * Група послідовних tool-call'ів: один компактний рядок (як одиничний tool)
  * + кнопка «показати більше (N)», що розкриває список окремих інструментів.
  */
-export function ToolGroup({ entries, compact }: ToolGroupProps): React.ReactNode {
+export function ToolGroup({ entries }: ToolGroupProps): React.ReactNode {
 	const [open, setOpen] = useState(false);
 	const calls = entries.map((e) => e.call);
 
@@ -91,7 +89,7 @@ export function ToolGroup({ entries, compact }: ToolGroupProps): React.ReactNode
 					{open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
 				</button>
 			</div>
-			{!open && !compact && lastPreview && lastPreview.trim() !== summary.trim() && (
+			{!open && lastPreview && lastPreview.trim() !== summary.trim() && (
 				<div className="cc-ui-tc-peek" title={lastPreview}>
 					<CornerDownRight size={13} className="cc-ui-tc-peek-mark" />
 					<span className="cc-ui-tc-peek-text">{lastPreview}</span>
@@ -104,7 +102,6 @@ export function ToolGroup({ entries, compact }: ToolGroupProps): React.ReactNode
 							<ToolCallView
 								call={entry.call}
 								status={entry.status}
-								compact={compact}
 								defaultOpen={entry.status === "error"}
 							>
 								{entry.result}
