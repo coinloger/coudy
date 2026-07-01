@@ -120,6 +120,12 @@ export function ConversationView({
 				}
 				// Якщо є текст — спершу флеш тулзи (ToolActivity перед відповіддю).
 				if (hasText) flushTools();
+				// Tool-only крок (немає видимого контенту при hideTools) → порожня бульбашка з
+				// діями (часом) без сенсу. Пропустити рендер, окрім активного streaming-кроку
+				// (може ще не мати тексту але стрімиться). Тулзи вже у ToolActivity.
+				const hasThinking = am.content.some((b) => b.type === "thinking");
+				const thinkingShown = hasThinking && (isStreaming || showCompleted);
+				if (!hasText && !thinkingShown && !isStreaming) continue;
 			}
 			rendered.push(
 				<AssistantMessage
