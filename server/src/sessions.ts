@@ -37,6 +37,8 @@ export interface SessionSummary {
 	plugin?: string | null;
 	/** Plugin-scoped id сесії (для plugin-owned сесій). */
 	pluginSessionId?: string | null;
+	/** id проєкту-контейнера (null = loose-чат без проєкту). */
+	projectId?: string | null;
 }
 
 /** Повна сесія (метадані + повідомлення). */
@@ -67,6 +69,8 @@ export interface SessionManagerOptions {
 	autoBindPromptTemplate?: (sessionId: string) => void;
 	/** Власність plugin-сесії за realSessionUuid (для полів plugin/pluginSessionId). */
 	resolveOwnership?: (sessionId: string) => { pluginName: string; pluginSessionId: string } | null;
+	/** id проєкту-контейнера сесії (для поля projectId; null = loose-чат). */
+	resolveProjectId?: (sessionId: string) => string | null;
 }
 
 /**
@@ -82,6 +86,7 @@ export class SessionManager {
 	private readonly resolvePromptTemplate?: SessionManagerOptions["resolvePromptTemplate"];
 	private readonly autoBindPromptTemplate?: SessionManagerOptions["autoBindPromptTemplate"];
 	private readonly resolveOwnership?: SessionManagerOptions["resolveOwnership"];
+	private readonly resolveProjectId?: SessionManagerOptions["resolveProjectId"];
 
 	constructor(options: SessionManagerOptions = {}) {
 		this.cwd = process.cwd();
@@ -93,6 +98,7 @@ export class SessionManager {
 		this.resolvePromptTemplate = options.resolvePromptTemplate;
 		this.autoBindPromptTemplate = options.autoBindPromptTemplate;
 		this.resolveOwnership = options.resolveOwnership;
+		this.resolveProjectId = options.resolveProjectId;
 	}
 
 	/** Створити нову сесію (UUIDv7 id). Опц. імʼя. Встановлює початкову модель (першу підключену). */
@@ -114,8 +120,9 @@ export class SessionManager {
 		return this.summarize(meta, name ?? null, entries, ctx.model, ctx.messages);
 	}
 
-	/** Список усіх сесій (без повідомлень). */
-	async list(): Promise<SessionSummary[]> {
+	/** Опції фільтрації list(). */
+	list(opts?: { projectId?: string; unassigned?: boolean }): Promise<SessionSummary[]>;
+	async list(opts?: { projectId?: string; unassigned?: boolean }): Promise<SessionSummary[]> {
 		const metas = await this.repo.list({});
 		const summaries: SessionSummary[] = [];
 		for (const meta of metas) {
@@ -129,6 +136,17 @@ export class SessionManager {
 				// пошкоджену сесію пропускаємо
 			}
 		}
+		return this.applyListFilter(summaries, opts);
+	}
+
+	/** Застосувати фільтр projectId/unassigned до списку summary. */
+	private applyListFilter(
+		summaries: SessionSummary[],
+		opts?: { projectId?: string; unassigned?: boolean },
+	): SessionSummary[] {
+		if (!opts) return summaries;
+		if (opts.projectId) return summaries.filter((s) => (s.projectId ?? null) === opts.projectId);
+		if (opts.unassigned) return summaries.filter((s) => !s.projectId);
 		return summaries;
 	}
 
@@ -235,6 +253,7 @@ export class SessionManager {
 		const last = entries[entries.length - 1] as { timestamp?: string } | undefined;
 		const sessionModel = model ? this.resolveSessionModel(model.provider, model.modelId) : null;
 		const ownership = this.resolveOwnership?.(meta.id) ?? null;
+		const projectId = this.resolveProjectId?.(meta.id) ?? null;
 		return {
 			id: meta.id,
 			name,
@@ -245,6 +264,7 @@ export class SessionManager {
 			contextUsage: this.computeContextUsage(messages, sessionModel),
 			plugin: ownership?.pluginName ?? null,
 			pluginSessionId: ownership?.pluginSessionId ?? null,
+			projectId,
 		};
 	}
 

@@ -34,6 +34,7 @@ import { SessionManager } from "./sessions.js";
 import { PromptTemplateStore, SessionPromptBinding } from "./prompts.js";
 import type { PromptTemplate } from "./prompts.js";
 import { PluginSessionRegistryImpl, PluginSessionStore } from "./plugin-sessions.js";
+import { ProjectStore, ProjectMembershipStore } from "./projects.js";
 import { handleChat, handleCompact, getGlobalTools } from "./chat.js";
 import { ChatSettingsStore, type ChatSettings } from "./chat-settings.js";
 import { processRegistry } from "./processes.js";
@@ -95,6 +96,9 @@ export class CoudyServer {
   // Plugin-owned ізольовані сесії (declareSession).
   private readonly pluginSessionRegistry = new PluginSessionRegistryImpl();
   private readonly pluginSessionStore = new PluginSessionStore();
+
+  private readonly projectStore = new ProjectStore();
+  private readonly projectMembership = new ProjectMembershipStore();
   // Per-session lock: запущені harness-и (фоновий агент). Ключ — sessionId.
   private readonly runningChat = new Map<string, { abort: () => void; startedAt: number }>();
 
@@ -148,6 +152,7 @@ export class CoudyServer {
         if (def) this.sessionPromptBindings.set(sessionId, def.id);
       },
       resolveOwnership: (sessionId) => this.pluginSessionStore.findBySessionId(sessionId),
+      resolveProjectId: (sessionId) => this.projectMembership.getProjectId(sessionId),
     });
     this.loader = new PluginLoader({
       pluginsDir: opts.pluginsDir,
@@ -725,9 +730,15 @@ export class CoudyServer {
       return;
     }
 
-    // GET /api/sessions — список усіх сесій (метадані, без messages).
+    // GET /api/sessions — список сесій (метадані, без messages). Опц. фільтри:
+    // ?projectId=X — сесії проєкту; ?unassigned=1 — loose-чати без проєкту.
     if (method === "GET" && pathname === "/api/sessions") {
-      this.sendJson(res, 200, { sessions: await this.sessions.list() });
+      const qProjectId = url.searchParams.get("projectId");
+      const qUnassigned = url.searchParams.get("unassigned");
+      const projectId = qProjectId ?? undefined;
+      const unassigned = qUnassigned === "1" || qUnassigned === "true";
+      const sessions = await this.sessions.list(projectId ? { projectId } : unassigned ? { unassigned: true } : undefined);
+      this.sendJson(res, 200, { sessions });
       return;
     }
 
@@ -754,6 +765,8 @@ export class CoudyServer {
         this.sessionPromptBindings,
         this.pluginSessionRegistry,
         this.pluginSessionStore,
+        this.projectStore,
+        this.projectMembership,
         this.chatSettings,
         {
           tryStart: (sid, abort) => this.tryStartChat(sid, abort),
@@ -763,11 +776,20 @@ export class CoudyServer {
       return;
     }
 
-    // POST /api/sessions — створити нову сесію (UUID id).
+    // POST /api/sessions — створити нову сесію (UUID id). Опц. {projectId} → привʼязка.
     if (method === "POST" && pathname === "/api/sessions") {
       const body = await this.readJsonBody(req);
       const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : undefined;
-      this.sendJson(res, 200, await this.sessions.create(name));
+      const summary = await this.sessions.create(name);
+      const projectId = typeof body?.projectId === "string" && body.projectId.trim() ? body.projectId.trim() : null;
+      if (projectId && this.projectStore.get(projectId)) {
+        this.projectMembership.assign(summary.id, projectId);
+        // Повернути summary з уже проставленим projectId (resolveProjectId читатиме мапу).
+        const updated = await this.sessions.get(summary.id);
+        this.sendJson(res, 200, updated ?? summary);
+      } else {
+        this.sendJson(res, 200, summary);
+      }
       return;
     }
 
@@ -896,6 +918,8 @@ export class CoudyServer {
         this.sessionPromptBindings,
         this.pluginSessionRegistry,
         this.pluginSessionStore,
+        this.projectStore,
+        this.projectMembership,
       );
       return;
     }
@@ -908,8 +932,92 @@ export class CoudyServer {
         this.sendJson(res, 404, { error: "Сесію не знайдено" });
         return;
       }
-      // Cleanup привʼязки шаблону сесії.
+      // Cleanup привʼязки шаблону сесії + проєкту.
       this.sessionPromptBindings.remove(id);
+      this.projectMembership.unassign(id);
+      this.sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    // ─── Проєкти (контейнер сесій + per-проєкт памʼять) ───────────────────
+    // POST /api/projects {name} → створити.
+    if (method === "POST" && pathname === "/api/projects") {
+      const body = await this.readJsonBody(req);
+      const name = typeof body?.name === "string" ? body.name.trim() : "";
+      if (!name) {
+        this.sendJson(res, 400, { error: "Потрібне поле name" });
+        return;
+      }
+      this.sendJson(res, 200, this.projectStore.create(name));
+      return;
+    }
+
+    // GET /api/projects → список.
+    if (method === "GET" && pathname === "/api/projects") {
+      this.sendJson(res, 200, { projects: this.projectStore.list() });
+      return;
+    }
+
+    // GET /api/projects/:id/sessions → сесії проєкту.
+    const projectSessionsMatch = /^\/api\/projects\/([^/]+)\/sessions$/.exec(pathname);
+    if (method === "GET" && projectSessionsMatch) {
+      const id = decodeURIComponent(projectSessionsMatch[1]);
+      const sessions = await this.sessions.list({ projectId: id });
+      this.sendJson(res, 200, { sessions });
+      return;
+    }
+
+    // GET /api/projects/:id/memory → памʼять проєкту.
+    const projectMemoryGetMatch = /^\/api\/projects\/([^/]+)\/memory$/.exec(pathname);
+    if (method === "GET" && projectMemoryGetMatch) {
+      const id = decodeURIComponent(projectMemoryGetMatch[1]);
+      if (!this.projectStore.get(id)) {
+        this.sendJson(res, 404, { error: "Проєкт не знайдено" });
+        return;
+      }
+      this.sendJson(res, 200, { items: this.projectStore.getMemory(id) });
+      return;
+    }
+
+    // DELETE /api/projects/:id/memory/:itemId → видалити правило памʼяті.
+    const memoryItemMatch = /^\/api\/projects\/([^/]+)\/memory\/([^/]+)$/.exec(pathname);
+    if (method === "DELETE" && memoryItemMatch) {
+      const id = decodeURIComponent(memoryItemMatch[1]);
+      const itemId = decodeURIComponent(memoryItemMatch[2]);
+      const ok = this.projectStore.deleteMemory(id, itemId);
+      this.sendJson(res, ok ? 200 : 404, ok ? { ok: true } : { error: "Правило не знайдено" });
+      return;
+    }
+
+    // PATCH /api/projects/:id {name} → перейменувати.
+    const projectMatch = /^\/api\/projects\/([^/]+)$/.exec(pathname);
+    if (method === "PATCH" && projectMatch) {
+      const id = decodeURIComponent(projectMatch[1]);
+      const body = await this.readJsonBody(req);
+      const name = typeof body?.name === "string" ? body.name.trim() : "";
+      if (!name) {
+        this.sendJson(res, 400, { error: "Потрібне поле name" });
+        return;
+      }
+      const project = this.projectStore.rename(id, name);
+      if (!project) {
+        this.sendJson(res, 404, { error: "Проєкт не знайдено" });
+        return;
+      }
+      this.sendJson(res, 200, project);
+      return;
+    }
+
+    // DELETE /api/projects/:id → видалити (сесії → loose).
+    if (method === "DELETE" && projectMatch) {
+      const id = decodeURIComponent(projectMatch[1]);
+      const ok = this.projectStore.delete(id);
+      if (!ok) {
+        this.sendJson(res, 404, { error: "Проєкт не знайдено" });
+        return;
+      }
+      // Сесії проєкту стають loose (розпуюються з проєкту, лишаються).
+      this.projectMembership.removeProject(id);
       this.sendJson(res, 200, { ok: true });
       return;
     }

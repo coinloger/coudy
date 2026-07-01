@@ -27,6 +27,7 @@ import {
   PluginSessionStore,
   resolvePluginOwnership,
 } from "./plugin-sessions.js";
+import { ProjectStore, ProjectMembershipStore, createMemoryTools, buildMemoryPromptSection } from "./projects.js";
 import type { PluginSessionOwnership } from "@coudycode/core";
 import { processRegistry } from "./processes.js";
 import { ChatSettingsStore } from "./chat-settings.js";
@@ -245,10 +246,17 @@ async function createHarness(
 	sessionId: string,
 	hooks: HookEngine,
 	template: { content: string; tools: string[] | null } | null,
+	projectId: string | null,
+	projectStore: ProjectStore,
 ): Promise<AgentHarness> {
 	const env = new NodeExecutionEnv({ cwd });
 	// Базові інструменти (з реєстром процесів) + processes-тулз + плагін-тулзи.
 	let tools = await hooks.applyFilters<AgentTool[]>("tools:register", createTrackedTools(cwd, sessionId), { sessionId, cwd });
+	// Memory-тулзи лише в проєктній сесії (замикання над projectId). Реєструються ПІСЛЯ
+	// плагінів і ДО toolset-фільтру шаблону (memory доступна за умови null/інклективного набору).
+	if (projectId) {
+		tools = [...tools, ...createMemoryTools(projectId, projectStore)];
+	}
 	// Фільтр за toolset-ом шаблону ПІСЛЯ applyFilters → контролює всі тулзи (вкл. плагін):
 	// null = усі; [] = без; [...] = лише ці (базові + плагін з цього списку).
 	if (template && template.tools !== null) {
@@ -259,7 +267,11 @@ async function createHarness(
 	const basePrompt = template
 		? template.content
 		: buildSystemPrompt({ cwd, tools: tools.map((t) => t.name) });
-	const systemPrompt = await hooks.applyFilters<string>("prompt:system", basePrompt);
+	let systemPrompt = await hooks.applyFilters<string>("prompt:system", basePrompt);
+	// Авто-інжект памʼяті проєкту (Правила проєкту + інструкція memory_save) — лише проєктна сесія.
+	if (projectId) {
+		systemPrompt += buildMemoryPromptSection(projectId, projectStore);
+	}
 	return new AgentHarness({
 		env,
 		session,
@@ -386,6 +398,8 @@ export async function handleChat(
 	promptBindings: SessionPromptBinding,
 	pluginSessionRegistry: PluginSessionRegistryImpl,
 	pluginSessionStore: PluginSessionStore,
+	projectStore: ProjectStore,
+	projectMembership: ProjectMembershipStore,
 	chatSettings: ChatSettingsStore,
 	lock: ChatLock,
 ): Promise<void> {
@@ -430,6 +444,8 @@ export async function handleChat(
 	}
 
 	// Структурна ізоляція: plugin-сесія має власний конфіг (без глобальних хуків).
+	// resolve projectId за sessionId (loose-чат → null → memory-тузи/інжект не застосовуються).
+	const projectId = projectMembership.getProjectId(sessionId);
 	const ownership = resolvePluginOwnership(sessionId, pluginSessionRegistry, pluginSessionStore);
 	const harness = ownership
 		? await createPluginHarness(resolved, opened.session, cwd, sessionId, ownership)
@@ -440,6 +456,8 @@ export async function handleChat(
 				sessionId,
 				hooks,
 				await resolveTemplate(sessionId, promptTemplates, promptBindings, hooks),
+				projectId,
+				projectStore,
 			);
 
 	// Per-session lock: заборонити дубль-старт тієї ж сесії (409 «session busy»).
@@ -564,6 +582,8 @@ export async function handleCompact(
 	promptBindings: SessionPromptBinding,
 	pluginSessionRegistry: PluginSessionRegistryImpl,
 	pluginSessionStore: PluginSessionStore,
+	projectStore: ProjectStore,
+	projectMembership: ProjectMembershipStore,
 ): Promise<void> {
 	initSSE(res);
 
@@ -591,10 +611,11 @@ export async function handleCompact(
 		return;
 	}
 
+	const projectId = projectMembership.getProjectId(sessionId);
 	const ownership = resolvePluginOwnership(sessionId, pluginSessionRegistry, pluginSessionStore);
 	const harness = ownership
 		? await createPluginHarness(resolved, opened.session, cwd, sessionId, ownership)
-		: await createHarness(resolved, opened.session, cwd, sessionId, hooks, await resolveTemplate(sessionId, promptTemplates, promptBindings, hooks));
+		: await createHarness(resolved, opened.session, cwd, sessionId, hooks, await resolveTemplate(sessionId, promptTemplates, promptBindings, hooks), projectId, projectStore);
 	const customInstructions =
 		typeof body.customInstructions === "string" ? body.customInstructions : undefined;
 
