@@ -77,6 +77,10 @@ function decodeDdgUrl(href, origin) {
 // --- Browser singleton: ліниво піднімається, перевикористовується ---
 let browserPromise = null;
 
+/** Ізольований user-data-dir: обов'язковий, щоб headless Chrome не чіпав профіль
+ *  користувача й не лишав зомбі-процесів основного Chrome. */
+const BROWSER_USER_DATA_DIR = join(homedir(), ".coudycode", "chrome-profile");
+
 async function getBrowser() {
 	if (browserPromise) return browserPromise;
 	const executablePath = findChromePath();
@@ -85,9 +89,11 @@ async function getBrowser() {
 			"Системний Chrome не знайдено. Встановіть Google Chrome або вкажіть шлях до нього.",
 		);
 	}
+	await mkdir(BROWSER_USER_DATA_DIR, { recursive: true });
 	browserPromise = puppeteer.launch({
 		executablePath,
 		headless: "new",
+		userDataDir: BROWSER_USER_DATA_DIR,
 		args: [
 			"--no-sandbox",
 			"--disable-setuid-sandbox",
@@ -150,6 +156,51 @@ const browseSchema = Type.Object({
 });
 
 /**
+ * Plain-fetch fallback: витягнути текст із статичної сторінки без браузера.
+ * Використовується, якщо headless Chrome впав/таймаутнув. Сирий HTML→текст (грубо).
+ * @param {string} url
+ * @param {number} maxChars
+ * @returns {Promise<{ text: string; title: string } | null>}
+ */
+async function plainFetchText(url, maxChars) {
+	try {
+		const res = await fetch(url, {
+			headers: { "User-Agent": DESKTOP_UA },
+			signal: AbortSignal.timeout(15000),
+			redirect: "follow",
+		});
+		if (!res.ok) return null;
+		const ct = res.headers.get("content-type") || "";
+		if (!/text\/html|text\/plain/.test(ct)) return null;
+		const html = await res.text();
+		const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+		const title = titleMatch ? titleMatch[1].replace(/\s+/g, " ").trim().slice(0, 200) : "";
+		const text = htmlToText(html).slice(0, maxChars);
+		return { text, title };
+	} catch {
+		return null;
+	}
+}
+
+/** Груба HTML→текст екстракція для plain-fetch fallback. */
+function htmlToText(html) {
+	return html
+		.replace(/<script[\s\S]*?<\/script>/gi, "")
+		.replace(/<style[\s\S]*?<\/style>/gi, "")
+		.replace(/<noscript[\s\S]*?<\/noscript>/gi, "")
+		.replace(/<[^>]+>/g, " ")
+		.replace(/&nbsp;/gi, " ")
+		.replace(/&amp;/gi, "&")
+		.replace(/&lt;/gi, "<")
+		.replace(/&gt;/gi, ">")
+		.replace(/&quot;/gi, '"')
+		.replace(/&#39;/gi, "'")
+		.replace(/[ \t]+/g, " ")
+		.replace(/\n\s*\n+/g, "\n")
+		.trim();
+}
+
+/**
  * @param {string} toolCallId
  * @param {{ url?: string; wait_for?: string; max_chars?: number }} params
  */
@@ -162,27 +213,65 @@ async function executeBrowse(toolCallId, params) {
 		};
 	}
 	const maxChars = Math.min(Math.max(Number(params?.max_chars) || 8000, 100), 50000);
+	const waitFor = typeof params?.wait_for === "string" && params.wait_for.trim() ? params.wait_for.trim() : null;
 
 	let page;
 	try {
 		const browser = await getBrowser();
 		page = await browser.newPage();
 		await page.setUserAgent(DESKTOP_UA);
-		await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
-		if (params?.wait_for) {
-			await page.waitForSelector(params.wait_for, { timeout: 10000 });
+		// JS-сайти: спершу networkidle2 (дочекатись основного JS-рендеру); fallback на domcontentloaded
+		// якщо idle2 зависає. Таймаут 25с щоб не висіти на важких сайтах.
+		try {
+			await page.goto(url, { waitUntil: "networkidle2", timeout: 25000 });
+		} catch (e) {
+			await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
 		}
+		// Дочекатись контенту: явний селектор з параметра, або поширені селектори, або короткий буфер.
+		if (waitFor) {
+			await page.waitForSelector(waitFor, { timeout: 10000 }).catch(() => undefined);
+		} else {
+			await page
+				.waitForSelector("main, article, [id*=content], [class*=content], #content, .content", {
+					timeout: 5000,
+				})
+				.catch(() => undefined);
+		}
+		// Невеликий буфер щоб SPA-фреймворки дочитали рендер після idle.
+		await new Promise((r) => setTimeout(r, 1500));
 		const [innerText, title] = await Promise.all([
 			page.evaluate(() => document.body.innerText),
 			page.title(),
 		]);
-		const text = innerText.length > maxChars ? innerText.slice(0, maxChars) + "\n…[обрізано]" : innerText;
+		// Якщо innerText занадто короткий/порожній — спробувати ще раз через секунду (повільний JS-рендер).
+		let text = innerText;
+		if (text.replace(/\s/g, "").length < 50) {
+			await new Promise((r) => setTimeout(r, 1500));
+			const retry = await page.evaluate(() => document.body.innerText);
+			if (retry.replace(/\s/g, "").length > text.replace(/\s/g, "").length) text = retry;
+		}
+		text = text.length > maxChars ? text.slice(0, maxChars) + "\n…[обрізано]" : text;
 		return {
 			content: [{ type: "text", text }],
 			details: { url, title, chars: text.length },
 		};
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
+		// Fallback на plain fetch (сирий HTML, JS не відрендериться).
+		const fb = await plainFetchText(url, maxChars);
+		if (fb && fb.text.replace(/\s/g, "").length > 0) {
+			const text =
+				fb.text.length > maxChars ? fb.text.slice(0, maxChars) + "\n…[обрізано]" : fb.text;
+			return {
+				content: [
+					{
+						type: "text",
+						text: `${text}\n\n(JS-рендер не вдався: ${msg}; повернено сирий HTML.)`,
+					},
+				],
+				details: { url, title: fb.title, chars: text.length, error: msg, fallback: "plain-fetch" },
+			};
+		}
 		return {
 			content: [{ type: "text", text: `Не вдалось відкрити сторінку: ${msg}` }],
 			details: { url, chars: 0, error: msg },
