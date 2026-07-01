@@ -637,10 +637,11 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 							</ToolCall>
 						</div>
 					)}
-					{/* Standalone індикатор роботи (braille-спінер + elapsed + ↓↑токени) доки не пішов текст/thinking-стрім. */}
-					{live.working &&
-						live.streamingTextIndex === undefined &&
-						live.streamingThinkingIndex === undefined && (
+					{/* Standalone індикатор роботи (braille-спінер + elapsed + ↓↑токени) — стабільно
+					    visible весь хід, поки агент працює. НЕ ховаємо під час текст/thinking-стріму
+					    (стрім рендериться окремим AssistantMessage вище) — інакше mount/unmount між
+					    кроками мерехтить і дере layout. */}
+					{live.working && (
 						<div className="cc-ui-msg cc-ui-msg-assistant">
 							<WorkingIndicator
 								elapsedMs={elapsedMs}
