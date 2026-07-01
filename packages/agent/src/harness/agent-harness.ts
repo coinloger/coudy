@@ -516,16 +516,18 @@ export class AgentHarness<
 				timestamp: Date.now(),
 			},
 		});
-		// 5. Синтетичний assistant-текст: зауваження + гарантує assistant після блоку
+		// 5. Синтетичний assistant-thinking: зауваження + гарантує assistant після блоку
 		//    (валідне чергування role перед наступним user-повідомленням ходу).
+		//    thinking-блок (не text) — приховано з чату юзера (reasoning), але модель
+		//    бачить дисципліну «закривай блок сам».
 		this.pendingSessionWrites.push({
 			type: "message",
 			message: {
 				role: "assistant",
 				content: [
 					{
-						type: "text",
-						text: `⚠️ У попередньому ході ти НЕ закрив logic-блок (авто-закриття). Його підсумок: «${summary}». Врахуй його. Наступного разу ЗАКРИВАЙ блок сам через block_end.`,
+						type: "thinking",
+						thinking: `⚠️ У попередньому ході ти НЕ закрив logic-блок (авто-закриття). Його підсумок: «${summary}». Врахуй його. Наступного разу ЗАКРИВАЙ блок сам через block_end.`,
 					},
 				],
 				api: this.model.api,
