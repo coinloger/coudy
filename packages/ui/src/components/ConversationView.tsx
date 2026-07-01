@@ -109,6 +109,8 @@ export function ConversationView({
 			const am = m as AssistantMessageType;
 			if (isAssistantMessage(am)) {
 				const hasText = am.content.some((b) => b.type === "text");
+				const hasThinking = am.content.some((b) => b.type === "thinking");
+				const thinkingShown = hasThinking && (isStreaming || showCompleted);
 				for (const block of am.content) {
 					if (block.type === "toolCall") {
 						turnTools.push({
@@ -118,13 +120,12 @@ export function ConversationView({
 						});
 					}
 				}
-				// Якщо є текст — спершу флеш тулзи (ToolActivity перед відповіддю).
-				if (hasText) flushTools();
+				// Флешити тулзи ПЕРЕД будь-яким видимим контентом (текст ЧИ thinking) —
+				// послідовний порядок ходу: activity (робота) → reasoning → answer.
+				if (hasText || thinkingShown) flushTools();
 				// Tool-only крок (немає видимого контенту при hideTools) → порожня бульбашка з
 				// діями (часом) без сенсу. Пропустити рендер, окрім активного streaming-кроку
 				// (може ще не мати тексту але стрімиться). Тулзи вже у ToolActivity.
-				const hasThinking = am.content.some((b) => b.type === "thinking");
-				const thinkingShown = hasThinking && (isStreaming || showCompleted);
 				if (!hasText && !thinkingShown && !isStreaming) continue;
 			}
 			rendered.push(
