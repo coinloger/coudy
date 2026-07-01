@@ -101,7 +101,7 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
-	const messages: AgentMessage[] = [...committed, ...live.messages];
+	const messages: AgentMessage[] = dedupeMessages([...committed, ...live.messages]);
 	const toolStatus: Record<string, ToolCallStatus> = { ...committedStatus, ...live.toolStatus };
 	const error = runError;
 
@@ -203,6 +203,11 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 			if (!sessionRunner.isRunning(sessionId)) {
 				setCommitted(s.messages ?? []);
 				setCommittedStatus({});
+				// Скинути live-сnapshot SessionRunner: завершений стрім лишав finished-повідомлення
+				// (running=false після agent_end) — без очистки вони б задублювались з committed при
+				// ремаунті чату (clear викликається лише на переході running true→false, якого при
+				// поверненні в завершений чат нема). Тут агент вже не running — безпечно.
+				sessionRunner.clear(sessionId);
 			}
 			setTitle(s.name ?? "Чат");
 			setCurrentModel(s.model ?? null);
@@ -743,6 +748,20 @@ function formatTokens(n: number): string {
 	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
 	if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
 	return String(n);
+}
+
+/** Дедуп за ключем role:timestamp — страхівка від дублю persisted + live snapshot
+ *  (persisted і snapshot несуть однакові timestamps). Зберігає перше входження. */
+function dedupeMessages(messages: AgentMessage[]): AgentMessage[] {
+	const seen = new Set<string>();
+	const out: AgentMessage[] = [];
+	for (const m of messages) {
+		const key = `${m.role}:${m.timestamp}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push(m);
+	}
+	return out;
 }
 
 /**
