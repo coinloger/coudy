@@ -868,3 +868,123 @@
 .cc-ui-lightbox-close:hover {
 	background: rgba(255, 255, 255, 0.3);
 }
+
+/* === Logic-блок: одна collapsible картка (block_start..block_end) === */
+.cc-ui-block {
+	margin: 0.25rem 0;
+	border-left: 3px solid #5a8080;
+	background: color-mix(in srgb, #5a8080 7%, transparent);
+	border-radius: 0 0.35rem 0.35rem 0;
+	padding: 0;
+	overflow: hidden;
+}
+.cc-ui-block-head {
+	display: flex;
+	align-items: center;
+	gap: 0.4rem;
+	padding: 0.35rem 0.55rem;
+	cursor: pointer;
+	user-select: none;
+	font-size: 0.82rem;
+	line-height: 1.45;
+	color: var(--pi-text);
+}
+.cc-ui-block-head:hover {
+	background: color-mix(in srgb, #5a8080 12%, transparent);
+}
+.cc-ui-block-chevron {
+	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+	color: var(--pi-text-dim);
+}
+.cc-ui-block-icon {
+	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: #5a8080;
+}
+.cc-ui-block-goal {
+	flex: 1 1 auto;
+	min-width: 0;
+	font-weight: 600;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.cc-ui-block-count {
+	flex-shrink: 0;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.72rem;
+	font-weight: 700;
+	color: var(--pi-text-muted);
+	background: color-mix(in srgb, var(--pi-text) 8%, transparent);
+	padding: 0.05rem 0.35rem;
+	border-radius: 0.3rem;
+}
+.cc-ui-block-preview {
+	flex: 0 1 auto;
+	min-width: 0;
+	font-weight: 400;
+	font-style: italic;
+	color: var(--pi-text-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.cc-ui-block-status {
+	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.2rem;
+	font-size: 0.74rem;
+	font-weight: 600;
+}
+.cc-ui-block-done {
+	color: var(--pi-success);
+}
+.cc-ui-block-running {
+	color: var(--pi-warning);
+}
+.cc-ui-block-dots {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+}
+.cc-ui-block-dots span {
+	width: 4px;
+	height: 4px;
+	border-radius: 50%;
+	background: var(--pi-warning);
+	animation: cc-ui-thinking-bounce 1.2s ease-in-out infinite;
+}
+.cc-ui-block-dots span:nth-child(2) {
+	animation-delay: 0.15s;
+}
+.cc-ui-block-dots span:nth-child(3) {
+	animation-delay: 0.3s;
+}
+.cc-ui-block-body {
+	padding: 0.4rem 0.6rem 0.45rem 1.1rem;
+	margin-top: 0.1rem;
+	border-top: 1px solid color-mix(in srgb, #5a8080 20%, transparent);
+}
+/* внутрішні повідомлення не мають зайвого зовнішнього margin */
+.cc-ui-block-body .cc-ui-msg,
+.cc-ui-block-body .cc-ui-tc {
+	margin: 0.1rem 0;
+}
+.cc-ui-block-summary {
+	margin-top: 0.5rem;
+	padding: 0.5rem 0.6rem;
+	background: color-mix(in srgb, #5a8080 10%, transparent);
+	border-radius: 0.35rem;
+	font-size: 0.85rem;
+	line-height: 1.5;
+	color: var(--pi-text);
+}
+.cc-ui-block-summary-label {
+	font-weight: 700;
+	color: #5a8080;
+}
