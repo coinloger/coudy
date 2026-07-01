@@ -96,7 +96,7 @@ export class CoudyServer {
   private readonly pluginSessionRegistry = new PluginSessionRegistryImpl();
   private readonly pluginSessionStore = new PluginSessionStore();
   // Per-session lock: запущені harness-и (фоновий агент). Ключ — sessionId.
-  private readonly runningChat = new Map<string, { abort: () => void }>();
+  private readonly runningChat = new Map<string, { abort: () => void; startedAt: number }>();
 
   /**
    * Per-session lock для чат-запуску.
@@ -105,7 +105,7 @@ export class CoudyServer {
    */
   tryStartChat(sessionId: string, abort: () => void): boolean {
     if (this.runningChat.has(sessionId)) return false;
-    this.runningChat.set(sessionId, { abort });
+    this.runningChat.set(sessionId, { abort, startedAt: Date.now() });
     return true;
   }
 
@@ -768,6 +768,16 @@ export class CoudyServer {
       const body = await this.readJsonBody(req);
       const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : undefined;
       this.sendJson(res, 200, await this.sessions.create(name));
+      return;
+    }
+
+    // GET /api/sessions/:id/status — чи виконується сесія (running) + startedAt (для elapsed
+    // після refresh). Окремий match перед sessionGetMatch (бо /status не матчить ^/api/sessions/([^/]+)$).
+    const sessionStatusMatch = /^\/api\/sessions\/([^/]+)\/status$/.exec(pathname);
+    if (method === "GET" && sessionStatusMatch) {
+      const id = decodeURIComponent(sessionStatusMatch[1]);
+      const entry = this.runningChat.get(id);
+      this.sendJson(res, 200, { running: !!entry, startedAt: entry?.startedAt });
       return;
     }
 

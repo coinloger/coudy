@@ -46,6 +46,8 @@ interface ActiveStream {
 	startTime: number;
 	/** Кешований snapshot (стабільне посилання між змінами → useSyncExternalStore без циклу). */
 	snapshot: SessionStreamState;
+	/** Інтервал поллінгу статусу (attach-режим після refresh) — undefined для звичайного run. */
+	pollTimer?: ReturnType<typeof setInterval>;
 }
 
 interface Listener {
@@ -166,6 +168,54 @@ class SessionRunner {
 			});
 	}
 
+	/**
+	 * Attach до сесії, що вже виконується на бекенді (напр. після refresh під час
+	 * генерації). НЕ POST /api/chat — лише синтетичний running snapshot + поллінг
+	 * GET /api/sessions/:id/status. Поки running=true — WorkIndicator visible, компзер
+	 * disabled. По завершенню (running=false) — done-подія → ChatView loadSession
+	 * підтягує персистовані повідомлення (вкл. фінальну відповідь).
+	 */
+	attach(sessionId: string, startedAt?: number): void {
+		if (this.streams.has(sessionId)) return; // вже підписані (звичайний run або повторний attach)
+		const stream: ActiveStream = {
+			controller: new AbortController(),
+			working: { ...initialConversationState, working: true },
+			running: true,
+			error: null,
+			startTime: startedAt ?? Date.now(),
+			snapshot: { working: initialConversationState, running: false, error: null },
+		};
+		this.rebuildSnapshot(stream);
+		this.rebuildRunning();
+		this.streams.set(sessionId, stream);
+		this.emit({ type: "start", sessionId });
+
+		// Поллінг статусу кожні 1.5с.
+		const poll = async (): Promise<void> => {
+			try {
+				const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/status`);
+				if (!res.ok) return;
+				const data = (await res.json()) as { running?: boolean };
+				if (!data.running) {
+					const s = this.streams.get(sessionId);
+					if (s && s.running) {
+						if (s.pollTimer) clearInterval(s.pollTimer);
+						s.pollTimer = undefined;
+						s.running = false;
+						s.working = { ...s.working, working: false };
+						this.rebuildSnapshot(s);
+						this.rebuildRunning();
+						this.emit({ type: "update", sessionId });
+						this.emit({ type: "done", sessionId });
+					}
+				}
+			} catch {
+				/* ігноруємо мережеві помилки поллінгу */
+			}
+		};
+		stream.pollTimer = setInterval(() => { void poll(); }, 1500);
+	}
+
 	/** Явний стоп: POST /abort (сервер абортить harness) + controller.abort. */
 	async abort(sessionId: string): Promise<void> {
 		const s = this.streams.get(sessionId);
@@ -223,6 +273,8 @@ class SessionRunner {
 
 	/** Скинути локальний стан сесії (після рефрешу committed у ChatView). */
 	clear(sessionId: string): void {
+		const s = this.streams.get(sessionId);
+		if (s?.pollTimer) clearInterval(s.pollTimer);
 		this.streams.delete(sessionId);
 		this.rebuildRunning();
 	}

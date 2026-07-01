@@ -209,6 +209,17 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 				// ремаунті чату (clear викликається лише на переході running true→false, якого при
 				// поверненні в завершений чат нема). Тут агент вже не running — безпечно.
 				sessionRunner.clear(sessionId);
+				// Refresh під час генерації: бекенд ще працює (detach), але локальний SessionRunner
+				// порожній → attach + поллінг статусу, щоб показати WorkIndicator + авто-reload фіналу.
+				try {
+					const sr = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/status`);
+					if (sr.ok) {
+						const st = (await sr.json()) as { running?: boolean; startedAt?: number };
+						if (st.running) sessionRunner.attach(sessionId, st.startedAt);
+					}
+				} catch {
+					/* ігноруємо помилку статус-чеку */
+				}
 			}
 			setTitle(s.name ?? "Чат");
 			setCurrentModel(s.model ?? null);
