@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { AgentMessage } from "@coudycode/agent-core";
 import { Boxes, ChevronDown, ChevronRight } from "lucide-react";
 import { ConversationView } from "./ConversationView.tsx";
+import { MarkdownRenderer } from "./MarkdownRenderer.tsx";
 import type { ToolResultIndex } from "./AssistantMessage.tsx";
 import type { ToolCallStatus } from "./ToolCall.tsx";
 
@@ -91,7 +92,8 @@ export function BlockView({
 					/>
 					{summary ? (
 						<div className="cc-ui-block-summary">
-							<span className="cc-ui-block-summary-label">📋 Підсумок:</span> {summary}
+							<span className="cc-ui-block-summary-label">📋 Підсумок:</span>
+							<MarkdownRenderer content={summary} />
 						</div>
 					) : null}
 				</div>
