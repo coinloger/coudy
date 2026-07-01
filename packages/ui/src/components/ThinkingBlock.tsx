@@ -53,13 +53,6 @@ export function ThinkingBlock({ content, streaming, showCompleted = false }: Thi
 				{!content.redacted && content.thinking && (
 					<span className="cc-ui-thinking-preview">{previewText(content.thinking)}</span>
 				)}
-				{streaming && (
-					<span className="cc-ui-thinking-dots" aria-hidden="true">
-						<span />
-						<span />
-						<span />
-					</span>
-				)}
 			</div>
 			{open && !content.redacted && (
 				<>

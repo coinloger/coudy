@@ -9,8 +9,8 @@ export interface MarkdownRendererProps {
 	streaming?: boolean;
 }
 
-/** Рендерить markdown-контент з підсвіткою коду у fences та курсором стрімінгу. */
-export function MarkdownRenderer({ content, streaming }: MarkdownRendererProps): React.ReactNode {
+/** Рендерить markdown-контент з підсвіткою коду у fences. */
+export function MarkdownRenderer({ content }: MarkdownRendererProps): React.ReactNode {
 	return (
 		<div className="cc-ui-msg-body">
 			<ReactMarkdown
@@ -40,13 +40,6 @@ export function MarkdownRenderer({ content, streaming }: MarkdownRendererProps):
 			>
 				{content}
 			</ReactMarkdown>
-			{streaming && (
-				<span className="cc-ui-streaming-dots" aria-hidden="true">
-					<span />
-					<span />
-					<span />
-				</span>
-			)}
 		</div>
 	);
 }

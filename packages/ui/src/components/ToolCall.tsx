@@ -22,10 +22,12 @@ export interface ToolCallProps {
 	children?: React.ReactNode;
 	/** За замовч. згорнуто. */
 	defaultOpen?: boolean;
+	/** Компактний режим: приховати детальний peek під summary (деталі по кліку). */
+	compact?: boolean;
 }
 
 /** Один інструмент: компактний summary-рядок (іконка опис статус chevron) + розкриття деталей. */
-export function ToolCall({ call, status, children, defaultOpen }: ToolCallProps): React.ReactNode {
+export function ToolCall({ call, status, children, defaultOpen, compact }: ToolCallProps): React.ReactNode {
 	const [open, setOpen] = useState<boolean>(defaultOpen ?? false);
 	const statusClass =
 		status === "running"
@@ -66,7 +68,7 @@ export function ToolCall({ call, status, children, defaultOpen }: ToolCallProps)
 				{status === "running" && <span className="cc-ui-tc-running-text">…</span>}
 				<span className="cc-ui-tc-chevron">{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
 			</div>
-			{!open && preview && preview.trim() !== description.trim() && (
+			{!open && !compact && preview && preview.trim() !== description.trim() && (
 				<div className="cc-ui-tc-peek" title={preview}>
 					<CornerDownRight size={13} className="cc-ui-tc-peek-mark" />
 					<span className="cc-ui-tc-peek-text">{preview}</span>

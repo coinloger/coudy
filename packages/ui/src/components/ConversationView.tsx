@@ -23,6 +23,8 @@ export interface ConversationViewProps {
 	streamingThinkingIndex?: number;
 	/** Чи показувати завершені thinking-блоки. */
 	showCompleted?: boolean;
+	/** Компактний режим тулзів (default ON): лише summary-рядки, деталі по кліку. */
+	compactTools?: boolean;
 	/** Дії на повідомленнях (від плагінів ui:message-actions). */
 	messageActions?: MessageAction[];
 }
@@ -39,6 +41,7 @@ export function ConversationView({
 	streamingTextIndex,
 	streamingThinkingIndex,
 	showCompleted,
+	compactTools = true,
 	messageActions,
 }: ConversationViewProps): React.ReactNode {
 	const all = streamingMessage ? [...messages, streamingMessage] : messages;
@@ -77,6 +80,7 @@ export function ConversationView({
 							streamingTextIndex={isStreaming ? streamingTextIndex : undefined}
 							streamingThinkingIndex={isStreaming ? streamingThinkingIndex : undefined}
 							showCompleted={showCompleted}
+						compactTools={compactTools}
 							// Під час стрімінгу дії приховані — доки агент не завершить відповідь.
 							actions={isStreaming ? [] : messageActions}
 						/>

@@ -32,6 +32,8 @@ export interface AssistantMessageProps {
 	streamingThinkingIndex?: number;
 	/** Чи показувати завершені thinking-блоки. */
 	showCompleted?: boolean;
+	/** Компактний режим тулзів: лише summary-рядки, деталі по кліку (default ON). */
+	compactTools?: boolean;
 	/** Дії на повідомленнях (від плагінів ui:message-actions). */
 	actions?: MessageAction[];
 }
@@ -74,6 +76,7 @@ export function AssistantMessage({
 	streamingTextIndex,
 	streamingThinkingIndex,
 	showCompleted,
+	compactTools = true,
 	actions,
 }: AssistantMessageProps): React.ReactNode {
 	const isError = message.stopReason === "error" && !!message.errorMessage;
@@ -133,7 +136,7 @@ export function AssistantMessage({
 					const block = calls[0];
 					if (block.type !== "toolCall") return null;
 					return (
-						<ToolCall key={sIdx} call={block} status={toolStatus?.[block.id]}>
+						<ToolCall key={sIdx} call={block} status={toolStatus?.[block.id]} compact={compactTools}>
 							{renderResult(block.id, block.name)}
 						</ToolCall>
 					);
@@ -146,7 +149,7 @@ export function AssistantMessage({
 						status: toolStatus?.[block.id],
 						result: renderResult(block.id, block.name),
 					}));
-				return <ToolGroup key={sIdx} entries={entries} />;
+				return <ToolGroup key={sIdx} entries={entries} compact={compactTools} />;
 			})}
 			{actions && actions.length > 0 && <MessageActionsBar message={message as never} actions={actions} />}
 		</div>
