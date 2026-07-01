@@ -62,11 +62,11 @@ export function BlockView({
 				<span className="cc-ui-block-goal" title={goal}>
 					{goal}
 				</span>
-				<span className="cc-ui-block-count" title={`${toolCount} інструментів у блоці`}>
-					× {toolCount}
-				</span>
-				{!open && summary && <span className="cc-ui-block-preview">· «{previewText(summary)}»</span>}
-				<span className={`cc-ui-block-status ${running ? "cc-ui-block-running" : "cc-ui-block-done"}`}>
+				<span className="cc-ui-block-meta">
+					<span className="cc-ui-block-count" title={`${toolCount} інструментів у блоці`}>
+						× {toolCount}
+					</span>
+					<span className={`cc-ui-block-status ${running ? "cc-ui-block-running" : "cc-ui-block-done"}`}>
 					{running ? (
 						<>
 							думаю
@@ -81,6 +81,7 @@ export function BlockView({
 					) : (
 						"готово"
 					)}
+					</span>
 				</span>
 			</div>
 			{open && (
@@ -114,10 +115,4 @@ function countToolCalls(entries: AgentMessage[]): number {
 		}
 	}
 	return n;
-}
-
-/** Перших ~90 символів підсумку в один рядок для превʼю у згорнутому стані. */
-function previewText(text: string, max = 90): string {
-	const t = text.trim().replace(/\s+/g, " ");
-	return t.length > max ? `${t.slice(0, max)}…` : t;
 }

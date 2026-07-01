@@ -923,15 +923,13 @@
 	padding: 0.05rem 0.35rem;
 	border-radius: 0.3rem;
 }
-.cc-ui-block-preview {
-	flex: 0 1 auto;
-	min-width: 0;
-	font-weight: 400;
-	font-style: italic;
-	color: var(--pi-text-muted);
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
+/* права група: лічильник × N + статус, притиснуті до правого краю */
+.cc-ui-block-meta {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.45rem;
+	margin-left: auto;
+	flex-shrink: 0;
 }
 .cc-ui-block-status {
 	flex-shrink: 0;
