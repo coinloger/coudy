@@ -130,10 +130,11 @@
 	word-break: break-word;
 	color: var(--pi-text);
 }
-/* картка текстового/markdown контенту асистента (прозора — зливається зі сторінкою) */
+/* картка текстового/markdown контенту асистента (сіра, padding, radius) */
 .cc-ui-msg-card {
-	border-radius: 0.5rem;
-	background: transparent;
+	border-radius: 0.3rem;
+	background: #eaeae9;
+	padding: 10px 15px;
 	margin: 0.25rem 0;
 }
 .cc-ui-msg-card > .cc-ui-msg-body {
@@ -873,6 +874,9 @@
 /* === Tool-активність ходу: один згорнутий subdued елемент (не стіна тулзів) === */
 .cc-ui-activity {
 	margin: 0.2rem 0;
+	background: #e5e5e3;
+	padding: 0.25rem;
+	border-radius: 0.3rem;
 }
 .cc-ui-activity-head {
 	display: inline-flex;

@@ -98,6 +98,7 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const stickRef = useRef(true);
+	const lastScrollHeightRef = useRef(0);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -321,10 +322,16 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 			.catch(() => undefined);
 	};
 
-	// Авто-скрол, якщо користувач біля низу.
+	// Авто-скрол униз — ЛИШЕ коли додався контент (scrollHeight зріс) І юзер біля низу
+	// (stickRef). Re-рендери без нового контенту (WorkIndicator-тік 1с, tool-status) НЕ
+	// скидають скрол → юзер вільно гортає вгору під час стріму. Поріг 80px — не «смикати»
+	// при незначних відступах від низу.
 	useEffect(() => {
 		const el = scrollRef.current;
-		if (el && stickRef.current) {
+		if (!el) return;
+		const grew = el.scrollHeight > lastScrollHeightRef.current;
+		lastScrollHeightRef.current = el.scrollHeight;
+		if (grew && stickRef.current) {
 			el.scrollTo({ top: el.scrollHeight, behavior: "auto" });
 		}
 	}, [messages, live.streamingMessage]);
@@ -541,7 +548,7 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 	const handleScroll = (): void => {
 		const el = scrollRef.current;
 		if (!el) return;
-		const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 40;
+		const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 80;
 		stickRef.current = atBottom;
 	};
 
@@ -609,7 +616,7 @@ export default function ChatView({ sessionId, chatPanels = [], messageActions = 
 					ref={scrollRef}
 					onScroll={handleScroll}
 				className="flex-grow-1 overflow-auto px-4 py-3"
-				style={{ background: "var(--pi-page-bg, #f8f8f8)" }}
+				style={{ background: "var(--pi-page-bg, #f8f8f8)", paddingBottom: "120px" }}
 			>
 				<div style={{ maxWidth: 900, margin: "0 auto" }}>
 					{messages.length === 0 && !live.streamingMessage && !live.working && !compaction ? (
