@@ -93,6 +93,13 @@ export default function App(): React.ReactNode {
     navigate(`/chat/${id}`);
   };
 
+  /** Створити чат у проєкті (з projectId) — для сайдбару. */
+  const handleCreateProjectSession = async (projectId: string): Promise<string> => {
+    const id = await sessions.createSession(undefined, projectId);
+    navigate(`/chat/${id}`);
+    return id;
+  };
+
   /** Стиснути контекст поточної сесії (POST /api/sessions/:id/compact SSE). */
   const handleCompact = async (): Promise<void> => {
     const id = sessions.activeId;
@@ -200,6 +207,8 @@ export default function App(): React.ReactNode {
         onSelectSession={handleSelectSession}
         onCreateSession={handleCreateSession}
         onDeleteSession={sessions.deleteSession}
+        onCreateProjectSession={handleCreateProjectSession}
+        refreshSessions={sessions.refresh}
       />
 
       <main className="flex-grow-1 d-flex flex-column overflow-hidden bg-white">

@@ -3,10 +3,15 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   Box,
   Boxes,
+  ChevronDown,
+  ChevronRight,
   FileText,
+  FolderClosed,
   LayoutDashboard,
   LayoutGrid,
   MessageSquare,
+  MessageSquarePlus,
+  NotebookPen,
   Package,
   PanelLeftClose,
   PanelLeftOpen,
@@ -22,6 +27,10 @@ import {
 import type { SidebarItem } from "./types";
 import type { ChatSession } from "./sessions";
 import { sessionRunner } from "./session-runner";
+import { useProjects } from "./projects";
+import { MemoryPanel } from "./MemoryPanel";
+import { Modal } from "./Modal";
+import { toastStore } from "./Toast";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -31,6 +40,10 @@ interface SidebarProps {
   onSelectSession: (id: string) => void;
   onCreateSession: () => void;
   onDeleteSession: (id: string) => void;
+  /** Створити сесію всередині проєкту (з projectId). Повертає id нової сесії. */
+  onCreateProjectSession: (projectId: string) => Promise<string>;
+  /** Оновити список сесій (після видалення проєкту — loose-сесії зʼявляться). */
+  refreshSessions: () => Promise<void>;
 }
 
 /** Curated-карта іконок Lucide за іменем (для пунктів від плагінів). */
@@ -127,16 +140,36 @@ export default function Sidebar(props: SidebarProps): React.ReactNode {
     onSelectSession,
     onCreateSession,
     onDeleteSession,
+    onCreateProjectSession,
+    refreshSessions,
   } = props;
 
   const navigate = useNavigate();
   const location = useLocation();
   const [query, setQuery] = useState("");
   const running = useRunningSessions();
+  const { projects, create: createProject, remove: removeProject } = useProjects();
 
-  const filteredSessions = query.trim()
-    ? sessions.filter((s) => s.title.toLowerCase().includes(query.trim().toLowerCase()))
-    : sessions;
+  // Розкриті проєкти (за id) + модалки.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [memoryProject, setMemoryProject] = useState<{ id: string; name: string } | null>(null);
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+
+  const q = query.trim().toLowerCase();
+  const match = (title: string): boolean => !q || title.toLowerCase().includes(q);
+
+  // Loose-чати (без проєкту) — «Нещодавні». Сесії проєктів групуються клієнтськи.
+  const looseSessions = sessions.filter((s) => !s.projectId && match(s.title));
+
+  const toggleExpanded = (id: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const width = collapsed ? 60 : 280;
 
@@ -149,6 +182,43 @@ export default function Sidebar(props: SidebarProps): React.ReactNode {
     const wasActive = isSessionActive(id);
     void onDeleteSession(id);
     if (wasActive) navigate("/");
+  };
+
+  /** Створити чат у проєкті → розкрити проєкт + перейти в новий чат. */
+  const handleCreateProjectSession = async (projectId: string): Promise<void> => {
+    const id = await onCreateProjectSession(projectId);
+    setExpanded((prev) => new Set(prev).add(projectId));
+    navigate(`/chat/${id}`);
+  };
+
+  /** Створити проєкт через модалку. */
+  const handleCreateProject = async (): Promise<void> => {
+    const name = newProjectName.trim();
+    if (!name) return;
+    const p = await createProject(name);
+    setNewProjectOpen(false);
+    setNewProjectName("");
+    if (p) {
+      setExpanded((prev) => new Set(prev).add(p.id));
+    } else {
+      toastStore.push({ title: "Не вдалося створити проєкт" });
+    }
+  };
+
+  /** Видалити проєкт (сесії стають loose). Оновити сесії, щоб projectId скинувся. */
+  const handleDeleteProject = async (projectId: string): Promise<void> => {
+    const ok = await removeProject(projectId);
+    if (ok) {
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        next.delete(projectId);
+        return next;
+      });
+      // Сесії проєкту стали loose — оновити список, щоб зʼявились у «Нещодавні».
+      void refreshSessions();
+    } else {
+      toastStore.push({ title: "Не вдалося видалити проєкт" });
+    }
   };
 
   return (
@@ -221,13 +291,132 @@ export default function Sidebar(props: SidebarProps): React.ReactNode {
         </div>
       )}
 
-      {/* Сесії */}
+      {/* Проєкти + Нещодавні */}
       <div className="flex-grow-1 overflow-y-auto overflow-x-hidden px-1" style={{ minWidth: 0 }}>
         {!collapsed && (
-          <div className="text-uppercase text-secondary small px-2 py-1">Нещодавні</div>
+          <>
+            {/* Секція «Проєкти» */}
+            <div className="d-flex align-items-center justify-content-between px-2 py-1">
+              <span className="text-uppercase text-secondary small">Проєкти</span>
+              <button
+                type="button"
+                className="btn btn-sm btn-link text-secondary p-0"
+                title="Новий проєкт"
+                onClick={() => setNewProjectOpen(true)}
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+            <ul className="nav flex-column gap-1 mb-2">
+              {projects.map((p) => {
+                const isOpen = expanded.has(p.id);
+                const projSessions = sessions.filter((s) => s.projectId === p.id && match(s.title));
+                // При пошуку — авто-розкрити проєкти з матчами.
+                const showSessions = isOpen || (!!q && projSessions.length > 0);
+                return (
+                  <li className="nav-item w-100 overflow-hidden" key={p.id} style={{ minWidth: 0 }}>
+                    <div
+                      className={`cc-project-row d-flex align-items-center gap-1 rounded px-2 py-1 w-100 ${
+                        isOpen ? "bg-secondary-subtle text-light" : "text-light"
+                      }`}
+                      style={{ cursor: "pointer", minWidth: 0 }}
+                      role="button"
+                      title={p.name}
+                      onClick={() => toggleExpanded(p.id)}
+                    >
+                      <span className="flex-shrink-0 text-secondary">
+                        {showSessions ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      </span>
+                      <span className="flex-shrink-0 d-flex align-items-center">
+                        <FolderClosed size={15} />
+                      </span>
+                      <span className="small text-truncate flex-grow-1" style={{ minWidth: 0 }}>
+                        {p.name}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-link text-secondary p-0 flex-shrink-0"
+                        title="Памʼять проєкту"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMemoryProject({ id: p.id, name: p.name });
+                        }}
+                      >
+                        <NotebookPen size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-link text-secondary p-0 flex-shrink-0"
+                        title="Видалити проєкт (сесії лишаться)"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`Видалити проєкт «${p.name}»? Сесії стануть loose і лишаться в «Нещодавні».`)) {
+                            void handleDeleteProject(p.id);
+                          }
+                        }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                    {showSessions && (
+                      <ul className="cc-project-sessions nav flex-column gap-1 mt-1 ms-2 mb-1">
+                        {projSessions.map((s) => (
+                          <li className="nav-item w-100 overflow-hidden" key={s.id} style={{ minWidth: 0 }}>
+                            <ItemButton
+                              active={isSessionActive(s.id)}
+                              collapsed={collapsed}
+                              title={s.title}
+                              icon={<MessageSquare size={15} />}
+                              label={s.title}
+                              onClick={() => onSelectSession(s.id)}
+                              trailing={
+                                <>
+                                  {running.includes(s.id) && (
+                                    <span className="cc-sidebar-running-dot" title="Працює у фоні" />
+                                  )}
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-link text-secondary p-0 flex-shrink-0"
+                                    title="Видалити"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteSession(s.id);
+                                    }}
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </>
+                              }
+                            />
+                          </li>
+                        ))}
+                        <li className="nav-item w-100">
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-link text-secondary p-0 d-flex align-items-center gap-1"
+                            title="Новий чат у проєкті"
+                            onClick={() => void handleCreateProjectSession(p.id)}
+                          >
+                            <MessageSquarePlus size={14} />
+                            <span className="small">Новий чат</span>
+                          </button>
+                        </li>
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+              {projects.length === 0 && (
+                <li className="px-2 text-secondary small">Немає проєктів</li>
+              )}
+            </ul>
+
+            {/* Секція «Нещодавні» */}
+            <div className="text-uppercase text-secondary small px-2 py-1">Нещодавні</div>
+          </>
         )}
         <ul className="nav flex-column gap-1 mb-2">
-          {filteredSessions.map((s) => (
+          {looseSessions.map((s) => (
             <li className="nav-item w-100 overflow-hidden" key={s.id} style={{ minWidth: 0 }}>
               <ItemButton
                 active={isSessionActive(s.id)}
@@ -257,8 +446,8 @@ export default function Sidebar(props: SidebarProps): React.ReactNode {
               />
             </li>
           ))}
-          {!collapsed && filteredSessions.length === 0 && (
-            <li className="px-2 text-secondary small">Немає сесій</li>
+          {!collapsed && looseSessions.length === 0 && (
+            <li className="px-2 text-secondary small">Немає чатів</li>
           )}
         </ul>
       </div>
@@ -304,6 +493,58 @@ export default function Sidebar(props: SidebarProps): React.ReactNode {
           ))}
         </ul>
       </div>
+
+      {/* Модалка нового проєкту. */}
+      <Modal
+        open={newProjectOpen}
+        title="Новий проєкт"
+        onClose={() => {
+          setNewProjectOpen(false);
+          setNewProjectName("");
+        }}
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn btn-sm btn-secondary"
+              onClick={() => {
+                setNewProjectOpen(false);
+                setNewProjectName("");
+              }}
+            >
+              Скасувати
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              disabled={!newProjectName.trim()}
+              onClick={() => void handleCreateProject()}
+            >
+              Створити
+            </button>
+          </>
+        }
+      >
+        <label className="form-label small">Назва проєкту</label>
+        <input
+          type="text"
+          className="form-control"
+          placeholder="Напр. coudycode, маркетинг-сайт…"
+          value={newProjectName}
+          autoFocus
+          onChange={(e) => setNewProjectName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void handleCreateProject();
+          }}
+        />
+      </Modal>
+
+      {/* Панель памʼяті проєкту. */}
+      <MemoryPanel
+        open={memoryProject !== null}
+        project={memoryProject}
+        onClose={() => setMemoryProject(null)}
+      />
     </aside>
   );
 }

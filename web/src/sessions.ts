@@ -7,6 +7,8 @@ export interface SessionSummary {
   createdAt: string;
   updatedAt: string;
   messageCount: number;
+  /** id проєкту-контейнера (null = loose-чат без проєкту). */
+  projectId?: string | null;
 }
 
 /** Повна сесія з сервера (GET /api/sessions/:id). */
@@ -29,6 +31,8 @@ export interface ChatSession {
   messages: ChatMessage[];
   createdAt: number;
   updatedAt: number;
+  /** id проєкту-контейнера (null = loose-чат без проєкту). */
+  projectId?: string | null;
 }
 
 const ACTIVE_KEY = "coudycode:active-session";
@@ -84,8 +88,8 @@ function toChatSession(s: ServerSession): ChatSession {
   };
 }
 
-function toSummaryItem(s: SessionSummary): { id: string; title: string } {
-  return { id: s.id, title: s.name ?? "Новий чат" };
+function toSummaryItem(s: SessionSummary): { id: string; title: string; projectId?: string | null } {
+  return { id: s.id, title: s.name ?? "Новий чат", projectId: s.projectId ?? null };
 }
 
 /**
@@ -132,11 +136,14 @@ export function useSessions() {
       .finally(() => setLoadingActive(false));
   }, [activeId]);
 
-  const createSession = useCallback(async (name?: string): Promise<string> => {
+  const createSession = useCallback(async (name?: string, projectId?: string): Promise<string> => {
+    const payload: Record<string, string> = {};
+    if (name) payload["name"] = name;
+    if (projectId) payload["projectId"] = projectId;
     const r = await fetch("/api/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(name ? { name } : {}),
+      body: JSON.stringify(payload),
     });
     const s = (await r.json()) as SessionSummary;
     await refresh();
