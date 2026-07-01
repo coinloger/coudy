@@ -11,20 +11,32 @@ afterEach(() => {
 	for (const r of registrations.splice(0)) r.unregister();
 });
 
+interface Msg {
+	role: string;
+	content: { type: string; text?: string; thinking?: string; name?: string }[];
+}
+
+async function branchMessages(harness: AgentHarness): Promise<Msg[]> {
+	const branch = await (harness as unknown as { session: { getBranch: () => Promise<Array<{ message?: Msg }>> } }).session.getBranch();
+	return branch.map((e) => e.message).filter((m): m is Msg => !!m);
+}
+
 /**
- * Коли модель відкриває block_start але завершує хід БЕЗ block_end —
- * auto-close має записати 3-й синтетичний запис як thinking-блок (НЕ text),
- * щоб зауваження не було видиме в чаті юзера (reasoning приховано за замовч.).
+ * СЦЕНАРІЙ 1 (баг «відповідь застрягла в блоці»): первинний цикл — модель відкриває
+ * block_start, продовжує після виконання тулза й пише фінальну відповідь текстом
+ * УСЕРЕДИНІ блоку, зупиняється (без block_end). Auto-close → continuation → модель
+ * доставляє фінальну відповідь користувачу текстом ПІСЛЯ блоку.
  */
-it("auto-close writes a thinking block (not text) so it is hidden from chat", async () => {
+it("auto-close → continuation: фінальна відповідь доставляється після блоку", async () => {
 	const registration = registerFauxProvider();
 	registrations.push(registration);
 
-	// Хід 1: модель відкриває блок, відразу стоп (НЕ закриває) → auto-close.
-	// Хід 2: проста відповідь (валідне чергування після авто-закриття).
+	// Первинний цикл: №1 block_start → №2 «відповідь у блоці» (stop, блок відкритий).
+	// Continuation: №3 «відповідь після блоку».
 	registration.setResponses([
-		fauxAssistantMessage([fauxToolCall("block_start", { goal: "прочитати файл X" })], { stopReason: "stop" }),
-		fauxAssistantMessage("Готово."),
+		fauxAssistantMessage([fauxToolCall("block_start", { goal: "дослідити інтеграцію" })], { stopReason: "stop" }),
+		fauxAssistantMessage("Це текст усередині блоку (застряг)."),
+		fauxAssistantMessage("Ось як правильно інтегрувати після блоку."),
 	]);
 
 	const harness = new AgentHarness({
@@ -35,38 +47,94 @@ it("auto-close writes a thinking block (not text) so it is hidden from chat", as
 		tools: [],
 	});
 
-	await harness.prompt("прочитай файл X");
+	const result = await harness.prompt("як правильно інтегрувати?");
+	// Фінальна відповідь — continuation (після блоку), не застрягла в блоці.
+	expect(result.content.some((c) => c.type === "text" && c.text.includes("Ось як правильно інтегрувати після блоку"))).toBe(true);
 
-	// Перший хід → auto-close. Другий хід щоб переконатись що чергування валідне
-	// (assistant-after-block перед наступним user).
-	await harness.prompt("добре");
+	const messages = await branchMessages(harness);
 
-	const branch = await harness["session"].getBranch();
-	const messages = branch.map((e) => (e as { message?: { role: string; content: { type: string; thinking?: string; text?: string }[] } }).message).filter(Boolean);
-
-	// Знайти синтетичний запис auto-close: assistant з block_start вже є, шукаємо
-	// assistant-повідомлення після block_end ack, що містить «авто-закриття».
-	const autoCloseNotes = messages.filter(
-		(m) =>
-			m.role === "assistant" &&
-			m.content.some((c) =>
-				(c.type === "thinking" || c.type === "text") && (c.thinking ?? c.text ?? "").includes("авто-закриття"),
-			),
+	// Авто-закриття сталось: синтетичний block_end-маркер.
+	const blockEndMarkers = messages.filter(
+		(m) => m.role === "assistant" && m.content.some((c) => c.type === "toolCall" && c.name === "block_end"),
 	);
-	expect(autoCloseNotes.length).toBeGreaterThanOrEqual(1);
+	expect(blockEndMarkers.length).toBe(1);
 
-	const note = autoCloseNotes[0];
-	const block = note.content.find((c) => c.type === "thinking" || c.type === "text")!;
-	// КЛЮЧОВА ПЕРЕВІРКА: тип контенту — thinking (НЕ text).
-	expect(block.type).toBe("thinking");
-	expect(block.thinking).toContain("авто-закриття");
-
-	// Дисципліна лишається в контексті моделі.
-	expect(block.thinking).toContain("ЗАКРИВАЙ");
-
-	// Жодного assistant-text «⚠️...» (старий text-формат) — він мав би бути text.
-	const oldTextStyle = messages.some(
-		(m) => m.role === "assistant" && m.content.some((c) => c.type === "text" && c.text?.includes("авто-закриття")),
+	// Continuation-відповідь присутня як звичайне assistant-повідомлення.
+	const contAnswers = messages.filter(
+		(m) => m.role === "assistant" && m.content.some((c) => c.type === "text" && c.text?.includes("Ось як правильно інтегрувати після блоку")),
 	);
-	expect(oldTextStyle).toBe(false);
+	expect(contAnswers.length).toBe(1);
+
+	// Continuation не зациклився: лише 1 block_start.
+	const blockStarts = messages.filter(
+		(m) => m.role === "assistant" && m.content.some((c) => c.type === "toolCall" && c.name === "block_start"),
+	);
+	expect(blockStarts.length).toBe(1);
+
+	// Last-resort нота (thinking) НЕ додавалась — continuation спрацював.
+	const notes = messages.filter(
+		(m) => m.role === "assistant" && m.content.some((c) => c.type === "thinking" && c.thinking?.includes("авто-закриття")),
+	);
+	expect(notes.length).toBe(0);
+});
+
+/**
+ * СЦЕНАРІЙ 2 (last-resort / бюджет): модель щоразу відкриває новий блок і зупиняється
+ * з текстом (ніколи не закриває й не відповідає по-справжньому). Бюджет continuation (2)
+ * вичерпується → last-resort: авто-закриття з нотою (thinking) + хід завершується.
+ */
+it("auto-close бюджет: вичерпання → last-resort з нотою, без циклу", async () => {
+	const registration = registerFauxProvider();
+	registrations.push(registration);
+
+	// Первинний + 2 continuation: кожен = block_start → текст (блок відкритий, stop).
+	// Після 2 continuation бюджет вичерпано → last-resort з нотою.
+	registration.setResponses([
+		fauxAssistantMessage([fauxToolCall("block_start", { goal: "задача" })], { stopReason: "stop" }),
+		fauxAssistantMessage("текст у блоці 1"),
+		fauxAssistantMessage([fauxToolCall("block_start", { goal: "задача" })], { stopReason: "stop" }),
+		fauxAssistantMessage("текст у блоці 2"),
+		fauxAssistantMessage([fauxToolCall("block_start", { goal: "задача" })], { stopReason: "stop" }),
+		fauxAssistantMessage("текст у блоці 3"),
+	]);
+
+	const harness = new AgentHarness({
+		env: new NodeExecutionEnv({ cwd: process.cwd() }),
+		session: new Session(new InMemorySessionStorage()),
+		model: registration.getModel(),
+		logicBlocks: true,
+		tools: [],
+	});
+
+	await harness.prompt("зроби");
+
+	const messages = await branchMessages(harness);
+
+	// Первинний + 2 continuation = 3 block_start спроби (бюджет 2 → не нескінченно).
+	const blockStarts = messages.filter(
+		(m) => m.role === "assistant" && m.content.some((c) => c.type === "toolCall" && c.name === "block_start"),
+	);
+	expect(blockStarts.length).toBe(3);
+
+	// Last-resort нота (thinking) додалась — бюджет вичерпано.
+	const notes = messages.filter(
+		(m) => m.role === "assistant" && m.content.some((c) => c.type === "thinking" && c.thinking?.includes("авто-закриття")),
+	);
+	expect(notes.length).toBe(1);
+
+	// Контекст, що бачить модель, компактований: послідовності валідні
+	// (внутрішні assistant зсередини авто-закритих блоків дропаються).
+	const { compactBlockInternals, extractBlockRanges } = await import("../../src/logic-block.ts");
+	const branch = await (harness as unknown as { session: { getBranch: () => Promise<Array<{ type: string; customType?: string; data?: unknown }>> } }).session.getBranch();
+	const blocks = extractBlockRanges(branch);
+	const compacted = compactBlockInternals(messages, blocks);
+	const cRoles = compacted.map((m) => m.role);
+	let cConsecutive = false;
+	for (let i = 1; i < cRoles.length; i++) {
+		if (cRoles[i] === cRoles[i - 1]) {
+			cConsecutive = true;
+			break;
+		}
+	}
+	expect(cConsecutive).toBe(false);
 });
