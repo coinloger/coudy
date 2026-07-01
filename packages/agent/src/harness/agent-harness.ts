@@ -5,18 +5,7 @@ import {
 	streamSimple,
 	type UserMessage,
 } from "@coudycode/ai";
-import { runAgentLoop, runAgentLoopContinue } from "../agent-loop.ts";
-import {
-	BLOCK_CUSTOM_TYPE,
-	compactBlockInternals,
-	createBlockEndTool,
-	createBlockHolder,
-	createBlockStartTool,
-	extractBlockRanges,
-	extractBlockSummary,
-	type BlockHolder,
-	type BlockMetadata,
-} from "../logic-block.ts";
+import { runAgentLoop } from "../agent-loop.ts";
 import type {
 	AgentContext,
 	AgentEvent,
@@ -55,14 +44,6 @@ function createUserMessage(text: string, images?: ImageContent[]): UserMessage {
 	const content: Array<{ type: "text"; text: string } | ImageContent> = [{ type: "text", text }];
 	if (images) content.push(...images);
 	return { role: "user", content, timestamp: Date.now() };
-}
-
-/** Останнє assistant-повідомлення з масиву (або undefined). */
-function pickLastAssistant(messages: AgentMessage[]): AssistantMessage | undefined {
-	for (let i = messages.length - 1; i >= 0; i--) {
-		if (messages[i]!.role === "assistant") return messages[i] as AssistantMessage;
-	}
-	return undefined;
 }
 
 function createFailureMessage(model: Model<any>, error: unknown, aborted: boolean): AssistantMessage {
@@ -190,21 +171,6 @@ interface AgentHarnessTurnState<
 	activeTools: TTool[];
 }
 
-/** Липке нагадування: дописується в кінець model-facing контексту, поки блок відкритий. */
-const BLOCK_OPEN_REMINDER =
-	"⚠️ У тебе ВІДКРИТИЙ logic-блок. Перед фінальною відповіддю — ЗАКРИЙ його block_end зі стислим підсумком. Поки блок відкритий — фінальну відповідь користувачу НЕ пиши (лише тулзи + короткі нотатки).";
-
-/** К-сть auto-close-продовжень за хід: коли модель зупинилась з відкритим блоком,
- *  авто-закриваємо й даємо їй ще генерацію на фінальну відповідь. Ліміт — щоб
- *  уникнути нескінченного циклу; після нього — last-resort (хід завершується). */
-const MAX_AUTO_CLOSE_CONTINUATIONS = 2;
-
-/** Ефемерна (не в сесії) нота для continuation: підштовхує модель дати фінальну
- *  відповідь користувачу після авто-закритого блоку. */
-function blockAutoCloseNote(summary: string): string {
-	return `Авто-закриття: ти не закрив logic-блок (зупинився без block_end). Його підсумок збережено вищє (block_end). Тепер дай фінальну відповідь користувачу текстом, спираючись на цей підсумок, БЕЗ нового блоку.`;
-}
-
 export class AgentHarness<
 	TSkill extends Skill = Skill,
 	TPromptTemplate extends PromptTemplate = PromptTemplate,
@@ -224,10 +190,6 @@ export class AgentHarness<
 	private resources: AgentHarnessResources<TSkill, TPromptTemplate>;
 	private tools = new Map<string, TTool>();
 	private activeToolNames: string[];
-	/** Чи увімкнено механіку logic-block. */
-	private readonly logicBlocks: boolean;
-	/** Згортка стану відкритого блоку (для tool-gating; скидається на початку кожного ходу). */
-	private blockHolder: BlockHolder = createBlockHolder();
 	private steerQueue: UserMessage[] = [];
 	private steeringQueueMode: QueueMode;
 	private followUpQueue: UserMessage[] = [];
@@ -256,16 +218,6 @@ export class AgentHarness<
 			: (options.tools ?? []).map((tool) => tool.name);
 		this.validateUniqueNames(this.activeToolNames, "Duplicate active tool name(s)");
 		this.validateToolNames(this.activeToolNames);
-		// Logic block (Крок A): зареєструвати маркер-тулзи + додати block_start в активні.
-		this.logicBlocks = options.logicBlocks ?? false;
-		if (this.logicBlocks) {
-			const startTool = createBlockStartTool(this.blockHolder) as unknown as TTool;
-			const endTool = createBlockEndTool(this.blockHolder, { writeBlock: (m) => this.writeBlockMetadata(m) }) as unknown as TTool;
-			if (!this.tools.has(startTool.name)) this.tools.set(startTool.name, startTool);
-			if (!this.tools.has(endTool.name)) this.tools.set(endTool.name, endTool);
-			if (!this.activeToolNames.includes(startTool.name)) this.activeToolNames.push(startTool.name);
-			if (!this.activeToolNames.includes(endTool.name)) this.activeToolNames.push(endTool.name);
-		}
 		this.steeringQueueMode = options.steeringMode ?? "one-at-a-time";
 		this.followUpQueueMode = options.followUpMode ?? "one-at-a-time";
 	}
@@ -380,14 +332,7 @@ export class AgentHarness<
 		const context = await this.session.buildContext();
 		const resources = this.getResources();
 		const sessionMetadata = await this.session.getMetadata();
-		// Крок B: scoped compaction — прибрати внутрішності ЗАКРИТИХ блоків з model-facing контексту.
-		// Лише при logicBlocks; метадані блоків беруться з custom-entries гілки сесії.
-		let messages = context.messages;
-		if (this.logicBlocks) {
-			const branch = await this.session.getBranch();
-			const blocks = extractBlockRanges(branch as Array<{ type: string; customType?: string; data?: unknown }>);
-			messages = compactBlockInternals(messages, blocks);
-		}
+		const messages = context.messages;
 		const tools = [...this.tools.values()];
 		const activeTools = this.activeToolNames
 			.map((name) => this.tools.get(name))
@@ -419,152 +364,22 @@ export class AgentHarness<
 	}
 
 	/**
-	 * Список тулзів, що пропонуються моделі, з урахуванням стану блоку (logic-block gating).
-	 * - блок закритий → лише block_start.
-	 * - блок відкритий → повний тулсет + block_end, без block_start (заборонена вкладеність).
-	 * Якщо logicBlocks вимкнено → повний activeTools як є.
+	 * Список тулзів, що пропонуються моделі — повний активний toolset кожен хід
+	 * (без gating).
 	 */
 	private getOfferedTools(turnState: AgentHarnessTurnState<TSkill, TPromptTemplate, TTool>): TTool[] {
-		const active = turnState.activeTools.slice();
-		if (!this.logicBlocks) return active;
-		const blockOpen = this.blockHolder.current !== null;
-		// Блок закритий → лише block_start; відкритий → повний тулсет (без block_start) + block_end.
-		return blockOpen
-			? active.filter((t) => t.name !== "block_start")
-			: active.filter((t) => t.name === "block_start");
+		return turnState.activeTools.slice();
 	}
 
 	private createContext(
 		turnState: AgentHarnessTurnState<TSkill, TPromptTemplate, TTool>,
 		systemPrompt?: string,
 	): AgentContext {
-		const messages = turnState.messages.slice();
-		// Липке нагадування: якщо блок відкритий — дописати в кінець контексту (ефемерне, не в JSONL).
-		if (this.logicBlocks && this.blockHolder.current !== null) {
-			this.appendBlockReminder(messages);
-		}
 		return {
 			systemPrompt: systemPrompt ?? turnState.systemPrompt,
-			messages,
+			messages: turnState.messages.slice(),
 			tools: this.getOfferedTools(turnState),
 		};
-	}
-
-	/**
-	 * Додати ефемерне нагадування в кінець model-facing messages, коли блок відкритий.
-	 * Зливається у контент останнього toolResult/user (уникнути consecutive-user для Anthropic),
-	 * ніколи не записується в сесію.
-	 */
-	private appendBlockReminder(messages: AgentMessage[]): void {
-		const reminderBlock = { type: "text" as const, text: BLOCK_OPEN_REMINDER };
-		const last = messages[messages.length - 1];
-		if (last && last.role === "toolResult") {
-			messages[messages.length - 1] = { ...last, content: [...last.content, reminderBlock] };
-			return;
-		}
-		if (last && last.role === "user") {
-			const prevContent =
-				typeof last.content === "string" ? [{ type: "text" as const, text: last.content }] : [...last.content];
-			messages[messages.length - 1] = { ...last, content: [...prevContent, reminderBlock] };
-			return;
-		}
-		messages.push({ role: "user", content: [reminderBlock], timestamp: Date.now() });
-	}
-
-	/** Записати метадані блоку в сесію (через чергу pending writes). */
-	private writeBlockMetadata(metadata: BlockMetadata): void {
-		this.pendingSessionWrites.push({ type: "custom", customType: BLOCK_CUSTOM_TYPE, data: metadata });
-	}
-
-	/**
-	 * Auto-close: хід завершився з відкритим блоком (модель не викликала block_end).
-	 * summary = останній assistant-текст у блоці (готова відповідь моделі).
-	 * Синтетичний endCallId + синтетичний block_end-маркер + ack → компакція
-	 * спрацьовує (внутрішності дропаються, лишається goal+summary).
-	 *
-	 * - `withNote=true` (last-resort): додатково синтетичний assistant-thinking із
-	 *   зауваженням «ти не закрив» — гарантує assistant після блоку перед наступним
-	 *   user-ходом (валідне чергування), модель бачить дисципліну наступним ходом.
-	 * - `withNote=false` (continuation): ноти нема — continuation-нота додається
-	 *   ефемерно в контекст продовження (не в сесію, не видима в чаті).
-	 */
-	private async autoCloseBlock(withNote = true): Promise<string | null> {
-		const block = this.blockHolder.current;
-		if (!block) return null;
-		this.blockHolder.current = null;
-		// 1. Best-effort summary: останній assistant-текст у блоці.
-		const context = await this.session.buildContext();
-		const summary = extractBlockSummary(context.messages, block.startCallId);
-		// 2. Синтетичний endCallId — компакція знайде границю (внутрішності дропаються).
-		const endCallId = `block-end-${block.id}`;
-		// 3. Метадані блоку (compaction-діапазон).
-		this.writeBlockMetadata({
-			blockId: block.id,
-			startCallId: block.startCallId,
-			endCallId,
-			goal: block.goal,
-			summary,
-			autoClosed: true,
-		});
-		const zeroUsage = {
-			input: 0,
-			output: 0,
-			cacheRead: 0,
-			cacheWrite: 0,
-			totalTokens: 0,
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-		};
-		// 4. Синтетичний block_end-маркер (assistant з toolCall) + ack (summary) → границя ІСНУЄ в messages.
-		this.pendingSessionWrites.push({
-			type: "message",
-			message: {
-				role: "assistant",
-				content: [{ type: "toolCall", id: endCallId, name: "block_end", arguments: { summary } }],
-				api: this.model.api,
-				provider: this.model.provider,
-				model: this.model.id,
-				usage: zeroUsage,
-				stopReason: "toolUse",
-				timestamp: Date.now(),
-			},
-		});
-		this.pendingSessionWrites.push({
-			type: "message",
-			message: {
-				role: "toolResult",
-				toolCallId: endCallId,
-				toolName: "block_end",
-				content: [{ type: "text", text: `Блок закрито (авто-закриття). Підсумок: «${summary}».` }],
-				details: { closed: true, autoClosed: true, blockId: block.id },
-				isError: false,
-				timestamp: Date.now(),
-			},
-		});
-		// 5. Синтетичний assistant-thinking (лише last-resort): зауваження + гарантує
-		//    assistant після блоку (валідне чергування role перед наступним user-ходом).
-		//    thinking-блок (не text) — приховано з чату юзера (reasoning), але модель
-		//    бачить дисципліну «закривай блок сам». Для continuation-шляху ноти нема
-		//    (ефемерна нота додається в контекст продовження).
-		if (!withNote) return summary;
-		this.pendingSessionWrites.push({
-			type: "message",
-			message: {
-				role: "assistant",
-				content: [
-					{
-						type: "thinking",
-						thinking: `⚠️ У попередньому ході ти НЕ закрив logic-блок (авто-закриття). Його підсумок: «${summary}». Врахуй його. Наступного разу ЗАКРИВАЙ блок сам через block_end.`,
-					},
-				],
-				api: this.model.api,
-				provider: this.model.provider,
-				model: this.model.id,
-				usage: zeroUsage,
-				stopReason: "stop",
-				timestamp: Date.now(),
-			},
-		});
-		return summary;
 	}
 
 	private createStreamFn(getTurnState: () => AgentHarnessTurnState<TSkill, TPromptTemplate, TTool>): StreamFn {
@@ -749,8 +564,6 @@ export class AgentHarness<
 		text: string,
 		options?: { images?: ImageContent[] },
 	): Promise<AssistantMessage> {
-		// Кожен хід починається з закритого блоку (стан не переноситься між ходами).
-		this.blockHolder.current = null;
 		let activeTurnState = turnState;
 		let messages: AgentMessage[] = [createUserMessage(text, options?.images)];
 		if (this.nextTurnQueue.length > 0) {
@@ -807,52 +620,13 @@ export class AgentHarness<
 		})();
 		try {
 			const newMessages = await runResultPromise;
-			let lastAssistant = pickLastAssistant(newMessages);
-
-			// Auto-close → continuation: якщо хід завершився з відкритим блоком (модель
-			// зупинилась без block_end, часто написавши фінальну відповідь усередині блоку),
-			// авто-закриваємо блок і даємо моделі ще генерацію на фінальну відповідь
-			// користувачу текстом ПІСЛЯ блоку (інакше відповідь застрягла б у блоці).
-			// Бюджет обмежує к-сть спроб (anti-loop); після нього — last-resort.
-			let continuationBudget = MAX_AUTO_CLOSE_CONTINUATIONS;
-			while (
-				this.logicBlocks &&
-				this.blockHolder.current !== null &&
-				continuationBudget > 0 &&
-				!abortController.signal.aborted
-			) {
-				continuationBudget--;
-				const summary = await this.autoCloseBlock(false);
-				await this.flushPendingSessionWrites();
-				// Continuation-контекст: свіжий, скомпактований (внутрішності авто-закритого
-				// блоку прибрано, лишається goal+summary). Додаємо ефемерну (не в сесію, не
-				// видиму в чаті) user-ноту, що підштовхує модель дати фінальну відповідь.
-				const contTurnState = await this.createTurnState();
-				const contContext = this.createContext(contTurnState, undefined);
-				contContext.messages.push(createUserMessage(blockAutoCloseNote(summary ?? "")));
-				const contMessages = await runAgentLoopContinue(
-					contContext,
-					this.createLoopConfig(getTurnState, setTurnState),
-					(event) => this.handleAgentEvent(event, abortController.signal),
-					abortController.signal,
-					this.createStreamFn(getTurnState),
-				).catch((error: unknown) => {
-					if (error instanceof AgentHarnessError) throw error;
-					const message = error instanceof Error ? error.message : String(error);
-					throw new AgentHarnessError("unknown", message, error instanceof Error ? error : undefined);
-				});
-				lastAssistant = pickLastAssistant(contMessages);
+			for (let i = newMessages.length - 1; i >= 0; i--) {
+				const message = newMessages[i]!;
+				if (message.role === "assistant") {
+					return message;
+				}
 			}
-
-			// Last-resort: бюджет вичерпано, а блок досі відкритий — авто-закрити з нотою
-			// (модель побачить дисципліну наступним ходом) й завершити хід.
-			await this.autoCloseBlock(true);
-			await this.flushPendingSessionWrites();
-
-			if (!lastAssistant) {
-				throw new AgentHarnessError("invalid_state", "AgentHarness prompt completed without an assistant message");
-			}
-			return lastAssistant;
+			throw new AgentHarnessError("invalid_state", "AgentHarness prompt completed without an assistant message");
 		} finally {
 			try {
 				await this.flushPendingSessionWrites();

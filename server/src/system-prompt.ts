@@ -14,12 +14,6 @@ export interface BuildSystemPromptOptions {
 	tools?: string[];
 	/** Робоча директорія. */
 	cwd: string;
-	/**
-	 * Чи активна механіка logic-block (тулзи доступні лише всередині блоку).
-	 * true → промпт block-aware (без інструкцій про прямі тулзи; секція tools як довідник).
-	 * false/undefined → пряма поведінка (тулзи викликаються напряму).
-	 */
-	logicBlocks?: boolean;
 }
 
 /** Короткі описи тулзів coudycode (для секції Available tools). */
@@ -50,7 +44,6 @@ const CORE_GUIDELINES: string[] = [
 export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	const tools = options.tools ?? ["read", "bash", "edit", "write", "grep", "find", "ls", "fetch"];
 	const cwd = options.cwd.replace(/\\/g, "/");
-	const logicBlocks = options.logicBlocks === true;
 
 	const now = new Date();
 	const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -62,17 +55,8 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	const guidelines = CORE_GUIDELINES.map((g) => `- ${g}`).join("\n");
 
-	// Вступ + high-leverage інженер: block-aware (без інструкцій про прямі тулзи) або прямий.
-	const intro = logicBlocks
-		? `You are an expert coding assistant working in the user's current project.
-
-Your goal is to complete tasks QUICKLY and CORRECTLY. Be a high-leverage engineer:
-- Act on the task IMMEDIATELY — do not narrate plans or list steps before doing them.
-- Do NOT over-explore "to understand the codebase" — gather only what the task needs.
-- Assume reasonable defaults instead of asking for clarification. Only ask when genuinely blocked.
-- Do NOT recap what you just did. The diff/result speaks for itself.
-- Code must be clean, maintainable, and bug-free.`
-		: `You are an expert coding assistant working in the user's current project.
+	// Вступ + high-leverage інженер: прямі тулзи (читане лишається в контексті).
+	const intro = `You are an expert coding assistant working in the user's current project.
 
 Your goal is to complete tasks QUICKLY and CORRECTLY. Be a high-leverage engineer:
 - Act on the task IMMEDIATELY — do not narrate plans or list steps before doing them.
@@ -82,20 +66,23 @@ Your goal is to complete tasks QUICKLY and CORRECTLY. Be a high-leverage enginee
 - Do NOT recap what you just did. The diff/result speaks for itself.
 - Code must be clean, maintainable, and bug-free.`;
 
-	// Секція тулзів: block-aware — довідник toolbox'у (доступ через блок) або прямий доступ.
-	const toolsSection = logicBlocks
-		? `Toolbox (довідник — ці інструменти доступні ЛИШЕ всередині logic-блоку через block_start):
-${toolsList}
-
-Додатково можуть бути доступні інші кастомні інструменти (також лише через блок).`
-		: `Available tools:
+	// Секція тулзів: прямий доступ (тулзи доступні напряму кожен хід).
+	const toolsSection = `Available tools:
 ${toolsList}
 
 In addition to the tools above, you may have access to other custom tools depending on the project.`;
 
+	const antiFlail = `Anti-flail (не масуй провалені тулзи):
+- Не повторюй ТОЙ САМИЙ тулз з тими ж аргументами >1 разу при помилці/порожньому результаті (404, «Page Not Found», ENOENT, EISDIR).
+- Зміни підхід після першої невдачі: інший URL; web_search замість browse (JS-сайт); fetch реального REST-endpoint замість сторінок доків; grep/ls замість read; bash замість read.
+- Для API-документації: спершу справжній endpoint/REST-шаблон (api-домен) через fetch, а НЕ browse HTML-сторінок доків (часто JS-only/404).
+- Якщо 2 різні підходи провалились — дай чесну відповідь користувачу (що вдалося, чого ні), не масуй нові спроби.`;
+
 	return `${intro}
 
 ${toolsSection}
+
+${antiFlail}
 
 Guidelines:
 ${guidelines}

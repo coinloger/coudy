@@ -1,7 +1,5 @@
 // Core Agent
 export * from "./agent.ts";
-// Logic Block (Крок A: маркери + tool-gating)
-export * from "./logic-block.ts";
 // Loop functions
 export * from "./agent-loop.ts";
 export * from "./harness/agent-harness.ts";

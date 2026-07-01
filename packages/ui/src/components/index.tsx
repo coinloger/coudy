@@ -1,5 +1,4 @@
 export { ConversationView, type ConversationViewProps } from "./ConversationView.tsx";
-export { BlockView, type BlockViewProps } from "./BlockView.tsx";
 export type { MessageAction } from "./message-actions.tsx";
 export { AssistantMessage, type AssistantMessageProps, type ToolResultIndex } from "./AssistantMessage.tsx";
 export { UserMessage, type UserMessageProps } from "./UserMessage.tsx";
