@@ -32,6 +32,7 @@ import { shortHash } from "../utils/hash.ts";
 import { parseStreamingJson } from "../utils/json-parse.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import { transformMessages } from "./transform-messages.ts";
+import { TagStreamParser, nextToolCallId } from "./tag-parser.ts";
 
 // =============================================================================
 // Utilities
@@ -533,6 +534,81 @@ export async function processResponsesStream<TApi extends Api>(
 			throw new Error(msg);
 		}
 	}
+
+	// Тег-парсер Hermes/Qwen (ornith тощо): витягти <tool_call> з text/thinking
+	// у справжні toolCall-блоки + стрипнути <think>/теги з контенту. No-op без тегів
+	// (безпечно для native API моделей).
+	postprocessTagStreamedContent(output, stream);
+}
+
+/**
+ * Постпроцес тегів Hermes/Qwen: витягнути <tool_call> з text/thinking у справжні
+ * toolCall-блоки (тулзи виконуються), стрипнути <think>/теги з контенту. No-op,
+ * якщо тегів немає (native API). Викликається після завершення стріму.
+ */
+function postprocessTagStreamedContent(output: AssistantMessage, stream: AssistantMessageEventStream): void {
+	const blocks = output.content;
+	// Швидкий skip: якщо ніде тегів — нічого не робимо.
+	const hasTags = blocks.some(
+		(b) => (b.type === "text" || b.type === "thinking") && hasAnyTagMarker(b.type === "text" ? b.text : b.thinking),
+	);
+	if (!hasTags) return;
+
+	const newBlocks: AssistantMessage["content"] = [];
+	let extractedToolCalls = 0;
+
+	for (const block of blocks) {
+		if (block.type === "text") {
+			const { text, toolCalls } = parseThroughTagParser(block.text);
+			if (text.trim()) newBlocks.push({ ...block, text });
+			for (const tc of toolCalls) {
+				newBlocks.push({ type: "toolCall", id: tc.id, name: tc.name, arguments: tc.arguments });
+				extractedToolCalls++;
+			}
+		} else if (block.type === "thinking") {
+			const { text, toolCalls } = parseThroughTagParser(block.thinking);
+			if (text.trim()) newBlocks.push({ ...block, thinking: text });
+			for (const tc of toolCalls) {
+				newBlocks.push({ type: "toolCall", id: tc.id, name: tc.name, arguments: tc.arguments });
+				extractedToolCalls++;
+			}
+		} else {
+			newBlocks.push(block);
+		}
+	}
+
+	output.content = newBlocks;
+
+	// Якщо витягнуті tool-callʼи — згенерувати події toolcall_start/toolcall_end,
+	// щоб harness побачив їх (тулзи виконуються) + stopReason → toolUse.
+	if (extractedToolCalls > 0) {
+		newBlocks.forEach((b, i) => {
+			if (b.type !== "toolCall") return;
+			stream.push({ type: "toolcall_start", contentIndex: i, partial: output });
+			stream.push({ type: "toolcall_delta", contentIndex: i, delta: JSON.stringify(b.arguments), partial: output });
+			stream.push({ type: "toolcall_end", contentIndex: i, toolCall: b, partial: output });
+		});
+		if (output.stopReason === "stop") output.stopReason = "toolUse";
+	}
+}
+
+/** Чи містить текст будь-який тег-маркер. */
+function hasAnyTagMarker(text: string): boolean {
+	return text.includes("<think") || text.includes("</think>") || text.includes("<tool_call") || text.includes("</tool_call>");
+}
+
+/** Пропустити текст через TagStreamParser → очищений текст + витягнуті toolCalls. */
+function parseThroughTagParser(text: string): { text: string; toolCalls: { id: string; name: string; arguments: Record<string, unknown> }[] } {
+	const parser = new TagStreamParser();
+	const chunks = [...parser.feed(text), ...parser.flush()];
+	const parts: string[] = [];
+	const toolCalls: { id: string; name: string; arguments: Record<string, unknown> }[] = [];
+	for (const c of chunks) {
+		if (c.type === "text") parts.push(c.text);
+		else if (c.type === "thinking") parts.push(c.text);
+		else toolCalls.push({ id: nextToolCallId(), name: c.name, arguments: c.arguments });
+	}
+	return { text: parts.join(""), toolCalls };
 }
 
 function mapStopReason(status: OpenAI.Responses.ResponseStatus | undefined): StopReason {
